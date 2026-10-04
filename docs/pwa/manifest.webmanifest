@@ -1,8 +1,10 @@
 {
+  "id": "/Rotenso_Windmi/?app=windmi-v1",
   "name": "Rotenso Windmi",
   "short_name": "Windmi",
   "description": "Dálkové ovládání tepelného čerpadla Rotenso Windmi",
-  "start_url": "./",
+  "start_url": "./index.html?app=windmi-v1",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#121214",
   "theme_color": "#121214",

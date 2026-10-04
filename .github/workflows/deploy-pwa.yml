@@ -1,4 +1,4 @@
-# Nasadí docs/pwa na GitHub Pages (HTTPS) pro instalaci PWA na mobil.
+# Nasadí docs/pwa na GitHub Pages pod /w2/ (nová instalční identita).
 name: Deploy PWA
 
 on:
@@ -31,13 +31,31 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
-          # Zapne Pages + GitHub Actions, pokud ještě nejsou nastavené.
           enablement: true
+
+      - name: Build site root
+        run: |
+          mkdir -p _site/w2
+          cp -a docs/pwa/. _site/w2/
+          cat > _site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="cs">
+          <head>
+            <meta charset="UTF-8">
+            <meta http-equiv="refresh" content="0; url=./w2/">
+            <title>Windmi</title>
+            <link rel="canonical" href="./w2/">
+          </head>
+          <body>
+            <p><a href="./w2/">Otevřít Windmi PWA</a></p>
+          </body>
+          </html>
+          EOF
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/pwa
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

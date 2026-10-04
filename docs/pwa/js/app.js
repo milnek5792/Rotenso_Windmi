@@ -550,7 +550,7 @@ function registerSw() {
   if (!('serviceWorker' in navigator)) {
     return;
   }
-  navigator.serviceWorker.register('./sw.js?v=27').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=w2').catch(() => {});
 }
 
 function init() {

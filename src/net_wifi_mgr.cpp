@@ -60,17 +60,24 @@ void ensureWifiPins() {
   Serial.println("[NET] Wi-Fi SDIO piny nastaveny (Tab5 C6)");
 }
 
-bool loadCredentials() {
-  if (storageLoadWifiCredentials(s_credSsid, sizeof(s_credSsid), s_credPass, sizeof(s_credPass))) {
-    return s_credSsid[0] != '\0';
-  }
+bool compileTimeWifiOk() {
+  return WIFI_SSID[0] != '\0' && strcmp(WIFI_SSID, "Vase_Sit") != 0 &&
+         strcmp(WIFI_SSID, "YOUR_SSID") != 0;
+}
 
-  if (WIFI_SSID[0] != '\0' && strcmp(WIFI_SSID, "Vase_Sit") != 0) {
+bool loadCredentials() {
+  // wifi_config.h má prioritu — po migraci NVS / vymazání hesel vždy funguje.
+  if (compileTimeWifiOk()) {
     strncpy(s_credSsid, WIFI_SSID, sizeof(s_credSsid) - 1);
     s_credSsid[sizeof(s_credSsid) - 1] = '\0';
     strncpy(s_credPass, WIFI_PASSWORD, sizeof(s_credPass) - 1);
     s_credPass[sizeof(s_credPass) - 1] = '\0';
     return true;
+  }
+
+  if (storageLoadWifiCredentials(s_credSsid, sizeof(s_credSsid), s_credPass,
+                                 sizeof(s_credPass))) {
+    return s_credSsid[0] != '\0';
   }
 
   s_credSsid[0] = '\0';
@@ -98,8 +105,7 @@ void refreshConnectedState() {
     strncpy(s_ip, ip.c_str(), sizeof(s_ip) - 1);
     s_ip[sizeof(s_ip) - 1] = '\0';
   }
-
-  storageSaveWifiCredentials(s_credSsid, s_credPass);
+  // NVS hesla neukládat tady — flash + SDIO Wi‑Fi zamrzá UI.
 }
 
 void startConnect() {
@@ -137,8 +143,30 @@ void netWifiInit() {
   storageInit();
   ensureWifiPins();
 
-  s_enabled = storageLoadWifiEnabled();
+  const bool hasCompile = compileTimeWifiOk();
+
+  // Po migraci NVS často zůstalo wifi_en=0 — s wifi_config.h vždy zapnout.
+  if (hasCompile) {
+    s_enabled = true;
+    Serial.println("[NET] Wi-Fi ON (wifi_config.h)");
+  } else if (!storageWifiEnabledIsSet()) {
+    s_enabled = false;
+  } else {
+    s_enabled = storageLoadWifiEnabled();
+  }
+
   loadCredentials();
+
+  // NVS seed jen když SSID v NVS chybí — ne při každém bootu (flash freeze).
+  if (s_enabled && hasCompile) {
+    char nvsSsid[33] = "";
+    char nvsPass[65] = "";
+    if (!storageLoadWifiCredentials(nvsSsid, sizeof(nvsSsid), nvsPass,
+                                    sizeof(nvsPass))) {
+      storageSaveWifiCredentials(s_credSsid, s_credPass);
+      Serial.println("[NET] Wi-Fi hesla ulozena do NVS (seed)");
+    }
+  }
 
   if (s_enabled) {
     WiFi.mode(WIFI_STA);

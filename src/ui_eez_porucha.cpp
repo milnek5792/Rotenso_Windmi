@@ -6,6 +6,7 @@
 #include "ui_eez_nav.h"
 #include "ui_eez_screens.h"
 
+#include <stdio.h>
 #include <string.h>
 
 namespace {
@@ -20,6 +21,61 @@ constexpr uint32_t kColTitle = 0xFF453Au;
 constexpr uint32_t kColText = 0xFFD60Au;
 constexpr uint32_t kColPanel = 0x1A1A1Fu;
 constexpr uint32_t kColBorder = 0x24242Bu;
+
+struct HpAlarmBit {
+  uint8_t map;  // 0..3 = 1009H..100CH
+  uint8_t bit;  // 0..15
+  const char* code;
+  const char* text;
+};
+
+/** Manuál Windmi §14 alarm bitmapy + §13.1 kódy. */
+constexpr HpAlarmBit kHpAlarms[] = {
+    // 1009H #1 — E0…Ec
+    {0, 0, "E0", "Prutokovy spinac vody"},
+    {0, 1, "E1", "Komunikace IDU-ODU"},
+    {0, 2, "E2", "Cidlo LWT za EH (T1)"},
+    {0, 3, "E3", "Cidlo T2 BPHE (rez.)"},
+    {0, 4, "E4", "Cidlo T2B BPHE (rez.)"},
+    {0, 5, "E5", "Porucha venkovni jednotky"},
+    {0, 6, "E6", "Cidlo zasobniku TUV (T7)"},
+    {0, 7, "E7", "Cidlo vstupni vody EWT"},
+    {0, 8, "E8", "Cidlo vystupni vody LWT"},
+    {0, 9, "E9", "Komunikace dratovy ovladac"},
+    {0, 10, "EA", "Cidlo 2. zony (Tw-2)"},
+    {0, 11, "Eb", "Cidlo LWT pomocneho zdroje"},
+    {0, 12, "Ec", "Porucha cerpadla vody"},
+    // 100AH #2
+    {1, 1, "P1", "Velky rozdil EWT-LWT"},
+    {1, 2, "P2", "Nedostatek prutoku vody"},
+    {1, 3, "P3", "Neobvykly rozdil EWT-LWT"},
+    {1, 6, "EH", "Ochrana zpetne vazby EH"},
+    // 100BH #3
+    {2, 0, "E4o", "Cidlo teploty skraplace"},
+    {2, 1, "E8o", "Cidlo teploty vytlaku"},
+    {2, 3, "Pb", "Vysoka teplota BPHE (chladivo)"},
+    {2, 4, "H4", "Ochrana P6 3x / 30 min"},
+    {2, 5, "AC", "Neobvykle napeti AC"},
+    {2, 6, "E4a", "Cidlo venkovni teploty"},
+    {2, 7, "P3o", "Nadproudova ochrana"},
+    {2, 8, "P6", "Ochrana IPM (P6)"},
+    {2, 9, "H6", "Vysoka teplota 3x / 100 min"},
+    {2, 10, "H12", "IPM vysoka teplota 3x / 60 min"},
+    {2, 11, "E10", "Chyba EEPROM"},
+    {2, 12, "P1o", "Ochrana vysokeho tlaku"},
+    {2, 13, "H5", "Nizky tlak 3x / 30 min"},
+    {2, 14, "H9", "Ventilator DC 2x / 10 min"},
+    {2, 15, "P5", "Vysoka teplota skraplace"},
+    // 100CH #4
+    {3, 0, "E2r", "Komunikace IDU-ODU (rez.)"},
+    {3, 1, "P9", "Ventilator ODU"},
+    {3, 2, "Pb2", "Vysoka teplota IPM"},
+    {3, 3, "H7", "Snizeni vykonu IDU (rez.)"},
+    {3, 4, "H10", "Nadproud 3x / 60 min"},
+    {3, 5, "P4", "Vysoka teplota vytlaku"},
+    {3, 6, "Ec2", "Cidlo chlazeni PCB"},
+    {3, 7, "P2o", "Ochrana nizkeho tlaku"},
+};
 
 void setVisible(bool on) {
   if (!s_panel) {
@@ -36,6 +92,72 @@ void setVisible(bool on) {
   }
 }
 
+/** Naplní msg prvním aktivním alarmem; vrací počet aktivních bitů. */
+int formatHpAlarms(char* msg, size_t msgCap) {
+  if (!msg || msgCap < 8) {
+    return 0;
+  }
+  msg[0] = '\0';
+  WindmiAlarmSnap al{};
+  lgModelReadAlarmSnap(&al);
+  if (!al.valid) {
+    return 0;
+  }
+
+  int count = 0;
+  char firstCode[12] = "";
+  char firstText[48] = "";
+
+  for (const HpAlarmBit& e : kHpAlarms) {
+    if (e.map >= 4) {
+      continue;
+    }
+    if ((al.bm[e.map] & (uint16_t)(1u << e.bit)) == 0u) {
+      continue;
+    }
+    ++count;
+    if (firstCode[0] == '\0') {
+      strncpy(firstCode, e.code, sizeof(firstCode) - 1);
+      strncpy(firstText, e.text, sizeof(firstText) - 1);
+    }
+  }
+
+  // Neznámé bity (nejsou v tabulce)
+  for (uint8_t m = 0; m < 4; ++m) {
+    for (uint8_t b = 0; b < 16; ++b) {
+      if ((al.bm[m] & (uint16_t)(1u << b)) == 0u) {
+        continue;
+      }
+      bool known = false;
+      for (const HpAlarmBit& e : kHpAlarms) {
+        if (e.map == m && e.bit == b) {
+          known = true;
+          break;
+        }
+      }
+      if (!known) {
+        ++count;
+        if (firstCode[0] == '\0') {
+          snprintf(firstCode, sizeof(firstCode), "A%u.%u", (unsigned)m,
+                   (unsigned)b);
+          strncpy(firstText, "Neznamy alarm TC", sizeof(firstText) - 1);
+        }
+      }
+    }
+  }
+
+  if (count == 0 || firstCode[0] == '\0') {
+    return 0;
+  }
+
+  if (count > 1) {
+    snprintf(msg, msgCap, "TC %s: %s (+%d)", firstCode, firstText, count - 1);
+  } else {
+    snprintf(msg, msgCap, "TC %s: %s", firstCode, firstText);
+  }
+  return count;
+}
+
 }  // namespace
 
 static uint32_t s_poruchaBootMs = 0;
@@ -46,16 +168,16 @@ void uiEezRefreshPorucha(void) {
   }
   char msg[sizeof(uiEez.porucha_text)] = "";
 
-  // Budoucí: kódy poruch z venkovní jednotky (např. ERR 14 nízký průtok) — zatím
-  // neznáme LIN bajty; doplnit až po odposlechu při reálné poruše.
-
-  if (!lgMaCerstoA0()) {
+  // 1) Chyby z tepelného čerpadla (Modbus alarm bitmapy)
+  if (formatHpAlarms(msg, sizeof(msg)) > 0) {
+    // HP alarm má prioritu
+  } else if (!lgMaCerstoA0()) {
     if ((millis() - s_poruchaBootMs) >= 45000u) {
-      strncpy(msg, "Ztráta spojení s venkovní jednotkou (LIN)", sizeof(msg));
+      strncpy(msg, "Ztrata spojeni s venkovni jednotkou (Modbus)", sizeof(msg));
     }
-  } else if (uiEez.rezim != UI_REZIM_AUTO && uiEez.sp_pending != 0 &&
+  } else if (!uiRezimRegulatorWritesWater(uiEez.rezim) && uiEez.sp_pending != 0 &&
              uiEezTeplotaVodySetColor() == UI_SP_COLOR_WARN) {
-    strncpy(msg, "Teplota vody nebyla potvrzena venkovní jednotkou", sizeof(msg));
+    strncpy(msg, "Teplota vody nebyla potvrzena venkovni jednotkou", sizeof(msg));
   }
 
   msg[sizeof(msg) - 1] = '\0';

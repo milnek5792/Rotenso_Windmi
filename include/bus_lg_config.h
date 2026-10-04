@@ -14,38 +14,7 @@
 #define LG_USE_EEZ_LVGL 1
 #endif
 
-// --- LIN UART piny ---
-#if LG_BOARD_7B
-  #ifndef LG_MBUS_RX_PIN
-  #define LG_MBUS_RX_PIN 44
-  #endif
-  #ifndef LG_MBUS_TX_PIN
-  #define LG_MBUS_TX_PIN 43
-  #endif
-  #ifndef LG_UART_NUM
-  #define LG_UART_NUM 2
-  #endif
-#else
-  #ifndef LG_MBUS_RX_PIN
-  #define LG_MBUS_RX_PIN 38
-  #endif
-  #ifndef LG_MBUS_TX_PIN
-  #define LG_MBUS_TX_PIN 37
-  #endif
-  #ifndef LG_UART_NUM
-  #define LG_UART_NUM 1
-  #endif
-#endif
-
-#ifndef LG_BAUDRATE
-#define LG_BAUDRATE 300
-#endif
-
-// Legacy aliasy (bus_lg_lin.h)
-#define TAB5_MBUS_RX_PIN LG_MBUS_RX_PIN
-#define TAB5_MBUS_TX_PIN LG_MBUS_TX_PIN
-
-/** 1 = lgBusTick() v dedikovaném lin tasku (7B architektura). 0 = v loop/task lg_bus. */
+/** Modbus bus task (dříve LIN). */
 #ifndef LG_LIN_DEDICATED_TASK
 #define LG_LIN_DEDICATED_TASK 1
 #endif
@@ -55,15 +24,11 @@
 #endif
 
 #ifndef LG_DEFER_LIN_START
-#define LG_DEFER_LIN_START 1
+#define LG_DEFER_LIN_START 0
 #endif
 
 #ifndef LG_LIN_START_DELAY_MS
-#if LG_BOARD_7B
-#define LG_LIN_START_DELAY_MS 1500
-#else
-#define LG_LIN_START_DELAY_MS 2000
-#endif
+#define LG_LIN_START_DELAY_MS 0
 #endif
 
 #ifndef LG_LIN_TASK_PRIO
@@ -71,7 +36,7 @@
 #endif
 
 #ifndef LG_LIN_QUIET_PARSE
-#define LG_LIN_QUIET_PARSE LG_BOARD_7B
+#define LG_LIN_QUIET_PARSE 0
 #endif
 
 #ifndef LG_A0_FRESH_MS

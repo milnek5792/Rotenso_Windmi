@@ -120,8 +120,8 @@ float computeEqBase(float outdoorC) {
   return equithermWaterFromCfg(outdoorC, &s_cfg);
 }
 
-float resolveBase(bool outOk, float outC) {
-  if (s_cfg.use_equitherm == 0) {
+float resolveBase(bool outOk, float outC, bool forceEquitherm) {
+  if (!forceEquitherm && s_cfg.use_equitherm == 0) {
     return kFixedBaseC;
   }
   if (outOk && !isnan(outC)) {
@@ -135,20 +135,36 @@ float resolveBase(bool outOk, float outC) {
   return kFixedBaseC;
 }
 
+bool isClassicEquithermMode(void) {
+  return uiEez.rezim == UI_REZIM_EKVITERM;
+}
+
+bool isRegulatorActiveMode(void) {
+  return uiRezimRegulatorWritesWater(uiEez.rezim);
+}
+
 void adoptOutput(const char* why) {
-  const bool outOk = climateRoomOutdoorIsOk();
-  const float outC = outOk ? climateRoomOutdoorTempC() : NAN;
-  const float base = resolveBase(outOk, outC);
+  const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
+  const float outC = outOk ? mVenkovniC : NAN;
+  const bool classic = isClassicEquithermMode();
+  const float base = resolveBase(outOk, outC, classic);
   const float a0 = currentOutputWaterC();
   s_eqBase = base;
-  s_pidCorr = clampf(a0 - base, REG_CORR_MIN_C, REG_CORR_MAX_C);
-  s_iTerm = s_pidCorr;
-  s_tWater = clampf(base + s_pidCorr, kOutMin, kOutMax);
+  if (classic) {
+    s_pidCorr = 0.0f;
+    s_iTerm = 0.0f;
+    s_tWater = clampf(base, kOutMin, kOutMax);
+  } else {
+    s_pidCorr = clampf(a0 - base, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    s_iTerm = s_pidCorr;
+    s_tWater = clampf(base + s_pidCorr, kOutMin, kOutMax);
+  }
   s_tWaterRaw = s_tWater;
   s_lastP = 0.0f;
   s_prevError = 0.0f;
   s_havePrev = false;
   s_lastError = 0.0f;
+  s_eco = false;
   ESP_LOGI(TAG, "adopt base=%.1f corr=%.1f T=%.1f I=%.1f — %s", (double)base,
            (double)s_pidCorr, (double)s_tWater, (double)s_iTerm,
            why ? why : "?");
@@ -241,12 +257,21 @@ void climateRegulatorSetDefaults(RegulatorConfig* cfg) {
 void climateRegulatorSetUseEquitherm(bool on) {
   s_cfg.use_equitherm = on ? 1 : 0;
   climateRegulatorRequestSave();
+  climateRegulatorRequestImmediateTick();
   ESP_LOGI(TAG, "use_equitherm=%d", (int)s_cfg.use_equitherm);
 }
 
 bool climateRegulatorUseEquitherm(void) { return s_cfg.use_equitherm != 0; }
 
 bool climateRegulatorIsEcoMode(void) { return s_eco; }
+
+void climateRegulatorAdjustOffset(float deltaC) {
+  float v = roundf(s_cfg.offset_c + deltaC);
+  s_cfg.offset_c = clampf(v, REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
+  climateRegulatorRequestSave();
+  climateRegulatorRequestImmediateTick();
+  ESP_LOGI(TAG, "ekv korekce=%+.0f C", (double)s_cfg.offset_c);
+}
 
 float climateRegulatorEquithermWaterAt(float outdoorC) {
   return equithermWaterFromCfg(outdoorC, &s_cfg);
@@ -327,17 +352,30 @@ void climateRegulatorSetRoomSp(float c) {
 }
 
 float climateRegulatorRoomSpEffective(void) {
-  return clampf(s_cfg.room_sp_c + s_planRoomOffset, 16.0f, 24.0f);
+  // Plánový útlum snižuje SP pokoje jen v pokojovém PI; u ekvitermy jde do vody.
+  const float off =
+      (uiEez.rezim == UI_REZIM_AUTO) ? s_planRoomOffset : 0.0f;
+  return clampf(s_cfg.room_sp_c + off, 16.0f, 24.0f);
 }
 
 void climateRegulatorSetPlanRoomOffset(float offsetC) {
-  s_planRoomOffset = clampf(offsetC, -5.0f, 0.0f);
+  const float v = clampf(offsetC, -5.0f, 0.0f);
+  if (v == s_planRoomOffset) {
+    return;
+  }
+  s_planRoomOffset = v;
   climateRegulatorRequestImmediateTick();
 }
 
 float climateRegulatorPlanRoomOffset(void) { return s_planRoomOffset; }
 
-void climateRegulatorSetPlanStop(bool stop) { s_planStop = stop; }
+void climateRegulatorSetPlanStop(bool stop) {
+  if (s_planStop == stop) {
+    return;
+  }
+  s_planStop = stop;
+  climateRegulatorRequestImmediateTick();
+}
 
 bool climateRegulatorPlanRequestsStop(void) { return s_planStop; }
 
@@ -354,14 +392,15 @@ void climateRegulatorGetSnapshot(RegulatorSnapshot* out) {
   out->error_c = s_lastError;
   out->room_sp_c = climateRegulatorRoomSpEffective();
   out->room_c = climateRoomIsOk() ? climateRoomTempC() : UI_TEPLOTA_NEPLATNA;
-  out->outdoor_c =
-      climateRoomOutdoorIsOk() ? climateRoomOutdoorTempC() : UI_TEPLOTA_NEPLATNA;
+  const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
+  out->outdoor_c = outOk ? mVenkovniC : UI_TEPLOTA_NEPLATNA;
   out->t_water_c = waterToBusC(s_tWater, s_eco ? -1.0f : s_lastError);
-  out->active = (uiEez.rezim == UI_REZIM_AUTO);
+  out->active = isRegulatorActiveMode();
   out->eco_mode = s_eco;
   out->room_ok = climateRoomIsOk();
-  out->outdoor_ok = climateRoomOutdoorIsOk();
-  out->use_equitherm = (s_cfg.use_equitherm != 0);
+  out->outdoor_ok = outOk;
+  out->use_equitherm = (s_cfg.use_equitherm != 0) || isClassicEquithermMode();
+  out->classic_equitherm = isClassicEquithermMode();
   out->pid_period_ms = kPidPeriodMs;
   if (s_lastPidMs == 0) {
     out->ms_since_pid = UINT32_MAX;
@@ -391,19 +430,20 @@ void climateRegulatorHistoryGet(int index, RegulatorHistoryPoint* out) {
 }
 
 void climateRegulatorTick(void) {
-  const bool isAuto = (uiEez.rezim == UI_REZIM_AUTO);
-  if (!isAuto) {
+  const bool active = isRegulatorActiveMode();
+  const bool classic = isClassicEquithermMode();
+  if (!active) {
     if (s_wasAuto) {
-      ESP_LOGI(TAG, "leave Auto — PID paused (I drzen, eco=%d)", (int)s_eco);
+      ESP_LOGI(TAG, "leave regulator — paused (eco=%d)", (int)s_eco);
     }
     s_wasAuto = false;
     return;
   }
   if (!s_wasAuto) {
-    ESP_LOGI(TAG, "enter Auto");
+    ESP_LOGI(TAG, "enter regulator (%s)", classic ? "ekviterm" : "pokoj PI");
     s_haveWritten = false;
     s_lastPidMs = 0;
-    adoptOutput("enter Auto");
+    adoptOutput(classic ? "enter ekviterm" : "enter Auto");
   }
   s_wasAuto = true;
 
@@ -413,7 +453,9 @@ void climateRegulatorTick(void) {
     retryUnconfirmedSp(now);
   }
 
-  if (s_lastPidMs != 0 && (now - s_lastPidMs) < kPidPeriodMs) {
+  // Klasická ekvitermá: častěji (venkovní teplota), pokoj PI: 120 s
+  const uint32_t periodMs = classic ? 30000u : kPidPeriodMs;
+  if (s_lastPidMs != 0 && (now - s_lastPidMs) < periodMs) {
     return;
   }
   s_lastPidMs = now;
@@ -421,14 +463,30 @@ void climateRegulatorTick(void) {
   const float roomSp = climateRegulatorRoomSpEffective();
   const bool roomOk = climateRoomIsOk();
   const float roomC = roomOk ? climateRoomTempC() : NAN;
-  const bool outOk = climateRoomOutdoorIsOk();
-  const float outC = outOk ? climateRoomOutdoorTempC() : NAN;
+  const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
+  const float outC = outOk ? mVenkovniC : NAN;
 
   float err = 0.0f;
-  const float base = resolveBase(outOk, outC);
+  const float base = resolveBase(outOk, outC, classic);
   s_eqBase = base;
 
-  if (roomOk && !isnan(roomC)) {
+  if (classic) {
+    // SP vody = ekvitermní křivka (+ offset_c) + plánový útlum (záporný)
+    s_eco = false;
+    s_lastP = 0.0f;
+    s_pidCorr = 0.0f;
+    s_iTerm = 0.0f;
+    s_havePrev = false;
+    s_lastError = 0.0f;
+    const float tRaw = base + s_planRoomOffset;
+    s_tWaterRaw = tRaw;
+    s_tWater = clampf(tRaw, kOutMin, kOutMax);
+    ESP_LOGI(TAG,
+             "Ekviterm — krivka=%.1f offset=%+.0f plan=%+.0f req=%.1f out=%.1f tc=%d",
+             (double)(base - s_cfg.offset_c), (double)s_cfg.offset_c,
+             (double)s_planRoomOffset, (double)s_tWater,
+             outOk ? (double)outC : -999.0, (int)tcBezi);
+  } else if (roomOk && !isnan(roomC)) {
     err = roomSp - roomC;
     s_lastError = err;
 
@@ -493,7 +551,7 @@ void climateRegulatorTick(void) {
 
   const uint8_t tBus = waterToBusC(s_tWater, s_eco ? -1.0f : err);
 
-  // LIN zápis jen když session běží a plán nechce VYP
+  // Zápis SP jen když session běží a plán nechce VYP
   if (tcBezi && !s_planStop) {
     maybeWriteSetpoint(tBus, now);
   }

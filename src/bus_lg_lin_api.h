@@ -1,4 +1,4 @@
-// lg_lin_api.h — verejne API sbernice (volatelne z UI jadra)
+// bus_lg_lin_api.h — legacy API (LIN odstraněn; stuby pro UI / session)
 #ifndef LG_LIN_API_H
 #define LG_LIN_API_H
 

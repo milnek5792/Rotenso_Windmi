@@ -16,8 +16,9 @@
 //
 // REZIMY (Integer — enum)
 // -----------------------
-// rezim                 0 = Auto (adaptivni/pokoj)
+// rezim                 0 = Auto (pokojova PI)
 //                       1 = Vystupni teplota (primy setpoint vody)
+//                       2 = Klasicka ekviterm (SP vody = krivka + korekce +-5)
 // stav_tc               0 = Vyp
 //                       1 = Cekam orig.
 //                       2 = Prestart

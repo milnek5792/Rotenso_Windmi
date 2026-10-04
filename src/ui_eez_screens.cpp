@@ -15,6 +15,7 @@ extern "C" {
 #include "ui_eez_settings.h"
 #include "ui_eez_wifi_form.h"
 #include "ui_eez_ble_mac_form.h"
+#include "climate_regulator.h"
 
 #include <string.h>
 
@@ -348,7 +349,7 @@ void create_screen_main() {
             // lbl_wifi
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lbl_wifi = obj;
-            lv_obj_set_pos(obj, 500, 15);
+            lv_obj_set_pos(obj, 365, 15);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
@@ -362,7 +363,7 @@ void create_screen_main() {
             // lbl_mqtt
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lbl_mqtt = obj;
-            lv_obj_set_pos(obj, 720, 16);
+            lv_obj_set_pos(obj, 695, 15);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
@@ -940,17 +941,22 @@ void tick_screen_main() {
         }
     }
     {
-        const bool roomMode = (get_var_rezim() == 0);
-        const char *title = roomMode
-                                ? "Nastavení pokojové teploty"
-                                : "Nastavení teploty vody";
-        const uint32_t titleCol = roomMode ? 0x0A84FFu : 0xFF9F0Au;
+        const int32_t rezim = get_var_rezim();
+        const char *title = "Nastavení teploty vody";
+        uint32_t titleCol = 0xFF9F0Au;
+        if (rezim == 0) {
+            title = "Nastavení pokojové teploty";
+            titleCol = 0x0A84FFu;
+        } else if (rezim == 2) {
+            title = "Ekviterm (korekce +-5)";
+            titleCol = 0x64D2FFu;
+        }
         const char *cur = lv_label_get_text(objects.lbl_setpoint_title);
         if (!cur || strcmp(cur, title) != 0) {
             lv_label_set_text(objects.lbl_setpoint_title, title);
         }
         static int8_t s_lastMode = -1;
-        const int8_t modeNow = roomMode ? 0 : 1;
+        const int8_t modeNow = (int8_t)rezim;
         if (s_lastMode != modeNow) {
             s_lastMode = modeNow;
             lv_obj_set_style_text_color(
@@ -960,11 +966,22 @@ void tick_screen_main() {
     }
     {
         if (objects.lbl_water_sp) {
-            if (get_var_rezim() == 0) {
+            const int32_t rezim = get_var_rezim();
+            if (rezim == 0) {
                 lv_obj_remove_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);
                 char line[48];
                 snprintf(line, sizeof(line), "Voda SP %s °C",
                          get_var_teplota_vody_set_lin());
+                const char *cur = lv_label_get_text(objects.lbl_water_sp);
+                if (!cur || strcmp(cur, line) != 0) {
+                    lv_label_set_text(objects.lbl_water_sp, line);
+                }
+            } else if (rezim == 2) {
+                lv_obj_remove_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);
+                char line[48];
+                const RegulatorConfig *cfg = climateRegulatorGetConfig();
+                snprintf(line, sizeof(line), "Korekce %+.0f °C",
+                         cfg ? (double)cfg->offset_c : 0.0);
                 const char *cur = lv_label_get_text(objects.lbl_water_sp);
                 if (!cur || strcmp(cur, line) != 0) {
                     lv_label_set_text(objects.lbl_water_sp, line);
@@ -1120,6 +1137,7 @@ void tick_screen_main() {
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
 #include "ui_eez_energy.h"
+#include "ui_eez_hp_config.h"
 #include "ui_eez_ble_mac_form.h"
 
 typedef void (*tick_screen_func_t)();
@@ -1131,9 +1149,10 @@ tick_screen_func_t tick_screen_funcs[] = {
     uiRegulatorTick,
     uiBleMacFormTick,
     uiEnergyTick,
+    uiHpConfigTick,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 7) {
+    if (screen_index >= 0 && screen_index < 8) {
         tick_screen_funcs[screen_index]();
     }
 }

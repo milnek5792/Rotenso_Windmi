@@ -30,6 +30,7 @@ extern void action_akce_settings_plan(lv_event_t * e);
 extern void action_akce_teplota_minus(lv_event_t * e);
 extern void action_akce_settings_servis(lv_event_t * e);
 extern void action_akce_settings_spotreba(lv_event_t * e);
+extern void action_akce_settings_hp_config(lv_event_t * e);
 extern void action_akce_plan_back(lv_event_t * e);
 extern void action_akce_plan_toggle(lv_event_t * e);
 

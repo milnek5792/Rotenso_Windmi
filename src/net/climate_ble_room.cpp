@@ -59,7 +59,6 @@ struct MeterState {
 };
 
 MeterState s_room;
-MeterState s_outdoor;
 
 uint32_t s_lastPollMs = 0;
 uint32_t s_phaseMs = 0;
@@ -268,9 +267,7 @@ void applyReading(MeterState* st, const MeterReading& r) {
 }
 
 bool scanComplete() {
-  const bool roomDone = !s_room.configured || s_room.hitThisScan;
-  const bool outDone = !s_outdoor.configured || s_outdoor.hitThisScan;
-  return roomDone && outDone;
+  return !s_room.configured || s_room.hitThisScan;
 }
 
 void maybeStopScanEarly() {
@@ -305,20 +302,14 @@ class ScanCbs : public NimBLEScanCallbacks {
     formatMac(ba->val, macStr, sizeof(macStr));
     const bool matchRoom =
         s_room.configured && macMatch(ba->val, s_room.mac);
-    const bool matchOut =
-        s_outdoor.configured && macMatch(ba->val, s_outdoor.mac);
 
-    ESP_LOGI(TAG, "SB cand %s rssi=%d parsed=%d room=%d out=%d T=%.1f", macStr,
-             d->getRSSI(), (int)parsed, (int)matchRoom, (int)matchOut,
+    ESP_LOGI(TAG, "SB cand %s rssi=%d parsed=%d room=%d T=%.1f", macStr,
+             d->getRSSI(), (int)parsed, (int)matchRoom,
              parsed ? (double)reading.temp : -999.0);
 
 #if BLE_ACCEPT_ANY_SWITCHBOT
-    if (parsed) {
-      if (!s_room.hitThisScan) {
-        applyReading(&s_room, reading);
-      } else if (s_outdoor.configured && !s_outdoor.hitThisScan) {
-        applyReading(&s_outdoor, reading);
-      }
+    if (parsed && !s_room.hitThisScan) {
+      applyReading(&s_room, reading);
       maybeStopScanEarly();
     }
 #else
@@ -326,18 +317,13 @@ class ScanCbs : public NimBLEScanCallbacks {
       applyReading(&s_room, reading);
       ESP_LOGI(TAG, "hit ROOM T=%.1f", (double)reading.temp);
       maybeStopScanEarly();
-    } else if (parsed && matchOut) {
-      applyReading(&s_outdoor, reading);
-      ESP_LOGI(TAG, "hit OUTDOOR T=%.1f", (double)reading.temp);
-      maybeStopScanEarly();
     }
 #endif
   }
 
   void onScanEnd(const NimBLEScanResults& results, int reason) override {
-    ESP_LOGI(TAG, "scan end reason=%d count=%d room=%d out=%d", reason,
-             results.getCount(), (int)s_room.hitThisScan,
-             (int)s_outdoor.hitThisScan);
+    ESP_LOGI(TAG, "scan end reason=%d count=%d room=%d", reason,
+             results.getCount(), (int)s_room.hitThisScan);
   }
 };
 
@@ -355,7 +341,6 @@ void expireIfStale(MeterState* st) {
 
 void applyToUi() {
   expireIfStale(&s_room);
-  expireIfStale(&s_outdoor);
 
   if (s_room.ok && !isnan(s_room.temp)) {
     uiEez.teplota_vnitrni = s_room.temp;
@@ -363,13 +348,7 @@ void applyToUi() {
     uiEez.teplota_vnitrni = UI_TEPLOTA_NEPLATNA;
   }
 
-  if (s_outdoor.ok && !isnan(s_outdoor.temp)) {
-    uiEez.teplota_venkovni = s_outdoor.temp;
-  } else {
-    uiEez.teplota_venkovni = UI_TEPLOTA_NEPLATNA;
-  }
-
-  // sig_ble = pokojový senzor OK (hlavní)
+  // Venkovní = Modbus TČ (ui_eez_model); BLE outdoor odstraněn.
   uiEez.sig_ble = s_room.ok;
 }
 
@@ -382,9 +361,6 @@ void finishPoll() {
   applyToUi();
   if (!s_room.hitThisScan) {
     ESP_LOGW(TAG, "poll MISS room");
-  }
-  if (s_outdoor.configured && !s_outdoor.hitThisScan) {
-    ESP_LOGW(TAG, "poll MISS outdoor");
   }
   if (s_firstPollPending) {
     if (s_room.hitThisScan || !s_room.configured) {
@@ -431,19 +407,16 @@ void bleDeinitSafe() {
 void climateBleInit(void) {
 #if LG_THERMA_BLE_ROOM
   s_room = MeterState{};
-  s_outdoor = MeterState{};
   s_room.configured = parseMac(BLE_METER_MAC, s_room.mac);
-  s_outdoor.configured = parseMac(BLE_OUTDOOR_MAC, s_outdoor.mac);
   s_lastPollMs = 0;
   s_phase = Phase::Idle;
   s_forcePoll = false;
   s_firstPollPending = true;
   uiEez.teplota_vnitrni = UI_TEPLOTA_NEPLATNA;
-  uiEez.teplota_venkovni = UI_TEPLOTA_NEPLATNA;
   uiEez.sig_ble = false;
-  ESP_LOGI(TAG, "init room=%d MAC=%s outdoor=%d MAC=%s interval=%lus",
-           (int)s_room.configured, BLE_METER_MAC, (int)s_outdoor.configured,
-           BLE_OUTDOOR_MAC, (unsigned long)(BLE_POLL_INTERVAL_MS / 1000));
+  ESP_LOGI(TAG, "init room=%d MAC=%s interval=%lus",
+           (int)s_room.configured, BLE_METER_MAC,
+           (unsigned long)(BLE_POLL_INTERVAL_MS / 1000));
 #else
   ESP_LOGI(TAG, "BLE room disabled");
 #endif
@@ -465,21 +438,11 @@ void climateBleStatusText(char* buf, size_t buflen) {
     snprintf(buf, buflen, "Skenuji SwitchBot...");
     return;
   }
-  char roomPart[40];
-  char outPart[40];
   if (s_room.ok && !isnan(s_room.temp)) {
-    snprintf(roomPart, sizeof(roomPart), "in %.1fC", (double)s_room.temp);
+    snprintf(buf, buflen, "pokoj %.1fC", (double)s_room.temp);
   } else {
-    snprintf(roomPart, sizeof(roomPart), "in ---");
+    snprintf(buf, buflen, "pokoj ---");
   }
-  if (!s_outdoor.configured) {
-    snprintf(outPart, sizeof(outPart), "out n/a");
-  } else if (s_outdoor.ok && !isnan(s_outdoor.temp)) {
-    snprintf(outPart, sizeof(outPart), "out %.1fC", (double)s_outdoor.temp);
-  } else {
-    snprintf(outPart, sizeof(outPart), "out ---");
-  }
-  snprintf(buf, buflen, "%s | %s", roomPart, outPart);
 #else
   snprintf(buf, buflen, "BLE vypnuto");
 #endif
@@ -487,7 +450,7 @@ void climateBleStatusText(char* buf, size_t buflen) {
 
 void climateBleTick(void) {
 #if LG_THERMA_BLE_ROOM
-  if (!s_room.configured && !s_outdoor.configured) {
+  if (!s_room.configured) {
     return;
   }
 
@@ -513,7 +476,6 @@ void climateBleTick(void) {
       s_forcePoll = false;
       s_lastPollMs = now;
       s_room.hitThisScan = false;
-      s_outdoor.hitThisScan = false;
       ESP_LOGI(TAG, "poll BEGIN%s (%s, interval=%lus)",
                first ? " first" : "",
                netWifiIsConnected() ? "WiFi OK" : "bez WiFi",
@@ -541,9 +503,8 @@ void climateBleTick(void) {
       scan->setActiveScan(true);
       scan->setInterval(160);
       scan->setWindow(120);
-      scan->setDuplicateFilter(false);  // oba senzory
-      ESP_LOGI(TAG, "scan start %d ms room=%s out=%s", BLE_SCAN_MS,
-               BLE_METER_MAC, BLE_OUTDOOR_MAC);
+      scan->setDuplicateFilter(false);
+      ESP_LOGI(TAG, "scan start %d ms room=%s", BLE_SCAN_MS, BLE_METER_MAC);
       if (!scan->start(BLE_SCAN_MS, false)) {
         ESP_LOGW(TAG, "scan start FAIL");
         finishPoll();
@@ -571,8 +532,7 @@ void climateBleTick(void) {
       bleDeinitSafe();
       esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
       uiLvglSetRgbLowBandwidth(false);
-      ESP_LOGI(TAG, "poll END room=%d out=%d",
-               (int)s_room.hitThisScan, (int)s_outdoor.hitThisScan);
+      ESP_LOGI(TAG, "poll END room=%d", (int)s_room.hitThisScan);
       enterPhase(Phase::Idle);
       break;
   }
@@ -621,7 +581,7 @@ void climateBleReleaseForTls(void) {
 
 bool climateBleBootPollPending(void) {
 #if LG_THERMA_BLE_ROOM
-  if (!s_room.configured && !s_outdoor.configured) {
+  if (!s_room.configured) {
     return false;
   }
   return s_firstPollPending;
@@ -657,46 +617,6 @@ int climateBleBatteryPct(void) {
 int climateBleRssi(void) {
 #if LG_THERMA_BLE_ROOM
   return s_room.rssi;
-#else
-  return 0;
-#endif
-}
-
-bool climateBleOutdoorIsOk(void) {
-#if LG_THERMA_BLE_ROOM
-  return s_outdoor.ok;
-#else
-  return false;
-#endif
-}
-
-float climateBleOutdoorTempC(void) {
-#if LG_THERMA_BLE_ROOM
-  return s_outdoor.temp;
-#else
-  return NAN;
-#endif
-}
-
-float climateBleOutdoorHumidity(void) {
-#if LG_THERMA_BLE_ROOM
-  return s_outdoor.hum;
-#else
-  return NAN;
-#endif
-}
-
-int climateBleOutdoorBatteryPct(void) {
-#if LG_THERMA_BLE_ROOM
-  return s_outdoor.batt;
-#else
-  return -1;
-#endif
-}
-
-int climateBleOutdoorRssi(void) {
-#if LG_THERMA_BLE_ROOM
-  return s_outdoor.rssi;
 #else
   return 0;
 #endif

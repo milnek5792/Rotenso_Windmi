@@ -7,6 +7,7 @@
 #include "ui_touch_tab5.h"
 #include "ui_eez_signal_leds.h"
 #include "ui_eez_ntp_label.h"
+#include "ui_eez_mb_label.h"
 #include "ui_eez_porucha.h"
 #include "ui_display_sleep.h"
 #include "ui_display_mgr.h"
@@ -47,6 +48,7 @@ static void lvglRepaintAfterWake(void) {
   ui_tick();
   uiEezApplySignalLeds();
   uiEezNtpLabelTick();
+  uiEezMbLabelTick();
   uiEezPoruchaTick();
   uiApplyTichyRezimVisual();
   uiTouchVisualSync();
@@ -198,6 +200,7 @@ void uiLvglInit() {
   ui_init();
   uiEezInitSignalLeds();
   uiEezNtpLabelInit();
+  uiEezMbLabelInit();
   uiEezPoruchaInit();
   uiTouchVisualInit();
   s_lastTickMs = millis();
@@ -323,6 +326,7 @@ void uiLvglTick() {
     ui_tick();
     uiEezApplySignalLeds();
     uiEezNtpLabelTick();
+    uiEezMbLabelTick();
     uiEezPoruchaTick();
     uiApplyTichyRezimVisual();
     lv_obj_t* scr = lv_screen_active();
@@ -333,6 +337,7 @@ void uiLvglTick() {
   ui_tick();
   uiEezApplySignalLeds();
   uiEezNtpLabelTick();
+  uiEezMbLabelTick();
   uiEezPoruchaTick();
   uiApplyTichyRezimVisual();
 }

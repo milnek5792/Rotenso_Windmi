@@ -8,6 +8,7 @@
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
 #include "ui_eez_energy.h"
+#include "ui_eez_hp_config.h"
 #include "ui_eez_images.h"
 #include "ui_eez_actions.h"
 #include "ui_eez_vars.h"
@@ -41,6 +42,9 @@ static lv_obj_t* getLvglObjectFromIndex(int32_t index) {
   }
   if (index == 6) {
     return uiEnergyScreen();
+  }
+  if (index == 7) {
+    return uiHpConfigScreen();
   }
   return nullptr;
 }

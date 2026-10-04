@@ -166,33 +166,37 @@ void onKdP(lv_event_t* e) {
 }
 void onOffsetM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->offset_c, -0.5f,
-              REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
+  climateRegulatorAdjustOffset(-1.0f);
+  markDirty();
 }
 void onOffsetP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->offset_c, 0.5f,
-              REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
+  climateRegulatorAdjustOffset(1.0f);
+  markDirty();
 }
 void onColdM(lv_event_t* e) {
   (void)e;
   adjustFloat(&climateRegulatorGetConfigMutable()->t_water_cold_c, -0.5f,
               REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
+  climateRegulatorRequestImmediateTick();
 }
 void onColdP(lv_event_t* e) {
   (void)e;
   adjustFloat(&climateRegulatorGetConfigMutable()->t_water_cold_c, 0.5f,
               REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
+  climateRegulatorRequestImmediateTick();
 }
 void onWarmM(lv_event_t* e) {
   (void)e;
   adjustFloat(&climateRegulatorGetConfigMutable()->t_water_warm_c, -0.5f,
               REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
+  climateRegulatorRequestImmediateTick();
 }
 void onWarmP(lv_event_t* e) {
   (void)e;
   adjustFloat(&climateRegulatorGetConfigMutable()->t_water_warm_c, 0.5f,
               REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
+  climateRegulatorRequestImmediateTick();
 }
 
 void refreshChart() {
@@ -267,7 +271,8 @@ void uiRegulatorCreate(void) {
   regulatorObj.btn_mode =
       makeButton(scr, kW - kMargin - 150, 4, 150, kBtnH, "Auto", onModeToggle, kColGreen);
   regulatorObj.btn_ekv =
-      makeButton(scr, kW - kMargin - 310, 4, 140, kBtnH, "PID only", onEkvToggle, kColOrange);
+      makeButton(scr, kW - kMargin - 310, 4, 140, kBtnH, "Ekviterm", onEkvToggle,
+                 kColAccent);
   regulatorObj.btn_save =
       makeButton(scr, kW - kMargin - 460, 4, 130, kBtnH, "Uložit", onSave, kColAccent);
 
@@ -314,11 +319,13 @@ void uiRegulatorCreate(void) {
   lv_label_set_long_mode(regulatorObj.lbl_live, LV_LABEL_LONG_WRAP);
 
   lv_obj_t* pidPanel = makePanel(scr, kMargin + colW + kGap, bottomY, colW, bottomH);
-  makeLabel(pidPanel, kPad, 4, colW - 2 * kPad, "PID / křivka", kColOrange);
+  makeLabel(pidPanel, kPad, 4, colW - 2 * kPad, "Ekvitermní křivka / PI",
+            kColOrange);
   regulatorObj.lbl_pid =
       makeLabel(pidPanel, kPad, 26, colW - 2 * kPad, "Kp Ki Kd", kColText);
   regulatorObj.lbl_curve =
-      makeLabel(pidPanel, kPad, 52, colW - 2 * kPad, "ekviterm", kColMuted);
+      makeLabel(pidPanel, kPad, 52, colW - 2 * kPad, "korekce 0 +-5 C",
+                kColMuted);
 
   const int colInner = colW - 2 * kPad;
   const int groupGap = 10;
@@ -354,15 +361,15 @@ void uiRegulatorCreate(void) {
   placeParamRow(byTop, "Kp", onKpM, onKpP, "Ki", onKiM, onKiP, "Kd", onKdM, onKdP,
                 &regulatorObj.btn_kp_m, &regulatorObj.btn_kp_p, &regulatorObj.btn_ki_m,
                 &regulatorObj.btn_ki_p, &regulatorObj.btn_kd_m, &regulatorObj.btn_kd_p);
-  placeParamRow(byBottom, "offset", onOffsetM, onOffsetP, "voda -15", onColdM, onColdP,
-                "voda +15", onWarmM, onWarmP, &regulatorObj.btn_bias_m,
+  placeParamRow(byBottom, "korekce", onOffsetM, onOffsetP, "voda -15", onColdM,
+                onColdP, "voda +15", onWarmM, onWarmP, &regulatorObj.btn_bias_m,
                 &regulatorObj.btn_bias_p, &regulatorObj.btn_cold_m,
                 &regulatorObj.btn_cold_p, &regulatorObj.btn_warm_m,
                 &regulatorObj.btn_warm_p);
 
   const int valY = byBottom + bh + 8;
   regulatorObj.lbl_val_bias =
-      makeLabel(pidPanel, kPad, valY, groupW, "offset -", kColAccent);
+      makeLabel(pidPanel, kPad, valY, groupW, "korekce 0", kColAccent);
   regulatorObj.lbl_val_cold =
       makeLabel(pidPanel, kPad + groupW + groupGap, valY, groupW, "voda -15 -",
                 kColAccent);
@@ -436,28 +443,42 @@ void uiRegulatorTick(void) {
   RegulatorSnapshot snap{};
   climateRegulatorGetSnapshot(&snap);
 
+  const char* modeBtnTxt = "Ruční";
+  uint32_t modeBtnCol = 0x48484Au;
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    modeBtnTxt = "Pokoj PI";
+    modeBtnCol = kColGreen;
+  } else if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    modeBtnTxt = "Ekviterm";
+    modeBtnCol = kColCyan;
+  }
   lv_obj_t* modeLbl = lv_obj_get_child(regulatorObj.btn_mode, 0);
   if (modeLbl) {
-    setLabelIfChanged(modeLbl, snap.active ? "Auto ON" : "Výstupní T");
+    setLabelIfChanged(modeLbl, modeBtnTxt);
   }
-  static bool s_lastActive = false;
-  static bool s_haveActive = false;
-  if (!s_haveActive || s_lastActive != snap.active) {
-    s_haveActive = true;
-    s_lastActive = snap.active;
-    lv_obj_set_style_bg_color(
-        regulatorObj.btn_mode,
-        lv_color_hex(snap.active ? kColGreen : 0x48484Au),
-        LV_PART_MAIN | LV_STATE_DEFAULT);
+  static int8_t s_lastRezimBtn = -1;
+  if (s_lastRezimBtn != (int8_t)uiEez.rezim) {
+    s_lastRezimBtn = (int8_t)uiEez.rezim;
+    lv_obj_set_style_bg_color(regulatorObj.btn_mode, lv_color_hex(modeBtnCol),
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
   }
 
+  // Tlačítko základu: jen v pokojovém PI (ekvitermá vs 32.5)
+  const bool showEkvToggle = (uiEez.rezim == UI_REZIM_AUTO);
+  if (regulatorObj.btn_ekv) {
+    if (showEkvToggle) {
+      lv_obj_remove_flag(regulatorObj.btn_ekv, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(regulatorObj.btn_ekv, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
   lv_obj_t* ekvLbl = lv_obj_get_child(regulatorObj.btn_ekv, 0);
-  if (ekvLbl) {
-    setLabelIfChanged(ekvLbl, snap.use_equitherm ? "EKV ON" : "fix 32.5");
+  if (ekvLbl && showEkvToggle) {
+    setLabelIfChanged(ekvLbl, snap.use_equitherm ? "zaklad EKV" : "zaklad 32.5");
   }
   static bool s_lastEkv = false;
   static bool s_haveEkv = false;
-  if (!s_haveEkv || s_lastEkv != snap.use_equitherm) {
+  if (showEkvToggle && (!s_haveEkv || s_lastEkv != snap.use_equitherm)) {
     s_haveEkv = true;
     s_lastEkv = snap.use_equitherm;
     lv_obj_set_style_bg_color(
@@ -473,34 +494,58 @@ void uiRegulatorTick(void) {
   const float outUi = uiEez.teplota_venkovni;
   const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
 
-  const char* modeTxt = "Výstupní T (pauza)";
-  if (snap.active) {
-    modeTxt = snap.eco_mode ? "Auto - Eco (kompresor vyp.)" : "Auto - běžná regulace";
+  const char* modeTxt = "Ruční SP vody (regulátor pauza)";
+  if (snap.classic_equitherm) {
+    modeTxt = "Ekviterm — SP vody = křivka + korekce";
+  } else if (snap.active) {
+    modeTxt = snap.eco_mode ? "Pokoj PI - Eco (kompresor vyp.)"
+                            : "Pokoj PI - běžná regulace";
   }
 
-  char line[260];
-  snprintf(line, sizeof(line),
-           "%s\n"
-           "základ %.1f + korekce %.1f = %.1f  LIN %u °C\n"
-           "P %.1f  I %.1f °C   e %.2f °C\n"
-           "pokoj %.1f / SP %.1f   venku %.1f\n"
-           "senzor %s%s",
-           modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,
-           (double)snap.t_water_sp_c, (unsigned)snap.t_water_c,
-           (double)snap.p_term_c, (double)snap.i_term_c, (double)errLive,
-           roomUiOk ? (double)roomUi : -999.0, (double)roomSp,
-           outUiOk ? (double)outUi : -999.0,
-           roomUiOk ? "OK" : "OFF", s_dirty ? " *" : "");
+  char line[280];
+  if (snap.classic_equitherm) {
+    snprintf(line, sizeof(line),
+             "%s\n"
+             "krivka+korekce = %.1f C  (korekce %+.0f)\n"
+             "venku %.1f   body vody %.0f / %.0f C\n"
+             "%s",
+             modeTxt, (double)snap.t_water_sp_c, (double)cfg->offset_c,
+             outUiOk ? (double)outUi : -999.0, (double)cfg->t_water_cold_c,
+             (double)cfg->t_water_warm_c, s_dirty ? "*" : "");
+  } else {
+    snprintf(line, sizeof(line),
+             "%s\n"
+             "základ %.1f + PI %.1f = %.1f  LIN %u °C\n"
+             "P %.1f  I %.1f °C   e %.2f °C\n"
+             "pokoj %.1f / SP %.1f   venku %.1f\n"
+             "senzor %s%s",
+             modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,
+             (double)snap.t_water_sp_c, (unsigned)snap.t_water_c,
+             (double)snap.p_term_c, (double)snap.i_term_c, (double)errLive,
+             roomUiOk ? (double)roomUi : -999.0, (double)roomSp,
+             outUiOk ? (double)outUi : -999.0,
+             roomUiOk ? "OK" : "OFF", s_dirty ? " *" : "");
+  }
   setLabelIfChanged(regulatorObj.lbl_live, line);
 
-  snprintf(line, sizeof(line), "Kp %.1f  Ki %.2f  Kd %.1f  (korekce °C)",
+  snprintf(line, sizeof(line), "Kp %.1f  Ki %.2f  Kd %.1f  (jen pokoj PI)",
            (double)cfg->kp, (double)cfg->ki, (double)cfg->kd);
   setLabelIfChanged(regulatorObj.lbl_pid, line);
 
-  snprintf(line, sizeof(line), "ekv: voda -15..+15 + offset  kor -5..+3  Eco +0.3");
+  if (snap.classic_equitherm) {
+    snprintf(line, sizeof(line),
+             "klasicka ekviterm: SP vody = f(venku) + korekce %+.0f C",
+             (double)cfg->offset_c);
+  } else if (snap.use_equitherm) {
+    snprintf(line, sizeof(line),
+             "pokoj PI: ekv zaklad + PI kor -5..+3  (offset %+.0f)",
+             (double)cfg->offset_c);
+  } else {
+    snprintf(line, sizeof(line), "pokoj PI: zaklad 32.5 C + PI korekce");
+  }
   setLabelIfChanged(regulatorObj.lbl_curve, line);
 
-  snprintf(line, sizeof(line), "%+.1f C", (double)cfg->offset_c);
+  snprintf(line, sizeof(line), "%+.0f C", (double)cfg->offset_c);
   setLabelIfChanged(regulatorObj.lbl_val_bias, line);
 
   snprintf(line, sizeof(line), "%.1f C", (double)cfg->t_water_cold_c);

@@ -5,6 +5,7 @@
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
 #include "ui_eez_energy.h"
+#include "ui_eez_hp_config.h"
 #include "ui_eez_ui.h"
 #include "ui_eez_wifi_form.h"
 #include "ui_eez_ble_mac_form.h"
@@ -29,12 +30,18 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   const bool leavingReg =
       uiGetCurrentScreen() == SCREEN_ID_REGULATOR &&
       screenId != SCREEN_ID_REGULATOR;
+  const bool leavingHpCfg =
+      uiGetCurrentScreen() == SCREEN_ID_HP_CONFIG &&
+      screenId != SCREEN_ID_HP_CONFIG;
 
   if (leavingPlan) {
     uiPlanOnLeave();
   }
   if (leavingReg) {
     uiRegulatorOnLeave();
+  }
+  if (leavingHpCfg) {
+    uiHpConfigOnLeave();
   }
 
   if (screenId == SCREEN_ID_WIFI_SETUP) {
@@ -51,6 +58,9 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   }
   if (screenId == SCREEN_ID_SPOTREBA) {
     uiEnergyEnsureCreated();
+  }
+  if (screenId == SCREEN_ID_HP_CONFIG) {
+    uiHpConfigEnsureCreated();
   }
 
   loadScreen(screenId);
@@ -93,4 +103,8 @@ bool uiIsRegulatorScreen() {
 
 bool uiIsEnergyScreen() {
   return uiGetCurrentScreen() == SCREEN_ID_SPOTREBA;
+}
+
+bool uiIsHpConfigScreen() {
+  return uiGetCurrentScreen() == SCREEN_ID_HP_CONFIG;
 }

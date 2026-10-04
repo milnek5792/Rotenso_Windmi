@@ -1,8 +1,9 @@
-// bus_lg_task.cpp — lgBusTick ve vlastní úloze (core 1, prio 7)
+// bus_lg_task.cpp — bus tick ve vlastní úloze (core 1); Windmi = Modbus probe
 #include "bus_lg_task.h"
 
 #include "bus_lg_config.h"
-#include "src/bus_lg_lin_api.h"
+#include "bus_rotenso_config.h"
+#include "src/bus/bus_rotenso_modbus.h"
 
 #include <Arduino.h>
 #include <esp_log.h>
@@ -11,7 +12,7 @@
 
 namespace {
 
-static const char* TAG = "LIN_TASK";
+static const char* TAG = "MB_TASK";
 TaskHandle_t s_linTask = nullptr;
 volatile bool s_running = false;
 
@@ -21,17 +22,19 @@ void linTask(void* /*arg*/) {
   ESP_LOGI(TAG, "deferred start %u ms", (unsigned)LG_LIN_START_DELAY_MS);
 #endif
 
-  lgBusInit();
+  rotensoBusInit();
   s_running = true;
-  ESP_LOGI(TAG, "task run core=%d prio=%u RX=%d TX=%d",
+  ESP_LOGI(TAG, "task run core=%d prio=%u RX=%d TX=%d DIR=%d",
            (int)xPortGetCoreID(),
            (unsigned)uxTaskPriorityGet(nullptr),
-           LG_MBUS_RX_PIN,
-           LG_MBUS_TX_PIN);
+           WINDMI_RS485_RX_PIN,
+           WINDMI_RS485_TX_PIN,
+           WINDMI_RS485_DIR_PIN);
 
   for (;;) {
-    lgBusTick();
-    vTaskDelay(pdMS_TO_TICKS(5));
+    rotensoBusTick();
+    // 1 TX / tick — 20 ms stačí (gap mezi transakcemi je v mbTransact)
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 
@@ -43,7 +46,7 @@ void lgBusStartTask(void) {
   }
   constexpr UBaseType_t kLinPrio = (UBaseType_t)LG_LIN_TASK_PRIO;
   constexpr uint32_t kLinStack = 12288;
-  BaseType_t ok = xTaskCreatePinnedToCore(linTask, "lin", kLinStack, nullptr,
+  BaseType_t ok = xTaskCreatePinnedToCore(linTask, "mbus", kLinStack, nullptr,
                                           kLinPrio, &s_linTask, 1);
   ESP_LOGI(TAG, "xTaskCreatePinnedToCore -> %d handle=%p stack=%u",
            (int)ok, (void*)s_linTask, (unsigned)kLinStack);

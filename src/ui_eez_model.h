@@ -17,9 +17,15 @@
 #define UI_SP_COLOR_WARN    0xFF453Au
 
 enum UiRezimRegulace : uint8_t {
-  UI_REZIM_AUTO = 0,
-  UI_REZIM_VYSTUPNI_TEPLOTA = 1
+  UI_REZIM_AUTO = 0,             /**< Pokojová PI (+ volitelný ekvitermní základ) */
+  UI_REZIM_VYSTUPNI_TEPLOTA = 1,  /**< Ruční SP topné vody */
+  UI_REZIM_EKVITERM = 2           /**< Klasická ekvitermá: SP vody = křivka + korekce */
 };
+
+/** Regulátor zapisuje SP vody (pokoj PI nebo klasická ekvitermá). */
+static inline bool uiRezimRegulatorWritesWater(UiRezimRegulace r) {
+  return r == UI_REZIM_AUTO || r == UI_REZIM_EKVITERM;
+}
 
 enum UiStavTc : uint8_t {
   UI_STAV_VYP = 0,
@@ -59,6 +65,7 @@ enum UiAkceTlacitko : uint8_t {
   UI_AKCE_SETTINGS_PLAN,
   UI_AKCE_SETTINGS_SERVIS,
   UI_AKCE_SETTINGS_SPOTREBA,
+  UI_AKCE_SETTINGS_HP_CONFIG,
   UI_AKCE_PLAN_BACK,
   UI_AKCE_PLAN_TOGGLE,
 };

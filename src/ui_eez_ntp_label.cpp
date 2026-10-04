@@ -4,6 +4,7 @@
 #include "ui_eez_fonts.h"
 #include "ui_eez_nav.h"
 #include "ui_eez_screens.h"
+#include "ui_eez_status_bar.h"
 
 #include <string.h>
 
@@ -44,7 +45,7 @@ void uiEezNtpLabelInit(void) {
   }
 
   s_lblNtp = lv_label_create(objects.main);
-  lv_obj_set_pos(s_lblNtp, 380, 15);
+  lv_obj_set_pos(s_lblNtp, UI_STATUS_NTP_X, UI_STATUS_Y);
   lv_obj_set_style_text_font(s_lblNtp, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(s_lblNtp, lv_color_hex(kColOff), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_align(s_lblNtp, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);

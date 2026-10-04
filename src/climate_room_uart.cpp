@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +25,6 @@ constexpr size_t kLineMax = 160;
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 bool s_inited = false;
 bool s_ok = false;
-bool s_outOk = false;
 bool s_scanBusy = false;
 uint32_t s_scanStartedMs = 0;
 constexpr uint32_t kScanTimeoutMs = 15000;
@@ -34,24 +34,17 @@ int s_batt = -1;
 int s_rssi = 0;
 uint32_t s_lastSeenMs = 0;
 
-float s_outTempC = UI_TEPLOTA_NEPLATNA;
-float s_outHum = UI_TEPLOTA_NEPLATNA;
-int s_outBatt = -1;
-int s_outRssi = 0;
-uint32_t s_outLastSeenMs = 0;
-
 ClimateRoomFound s_found[H2_FOUND_MAX];
 int s_foundCount = 0;
 
 char s_cfgMac[H2_MAC_STR_LEN] = "";
-char s_cfgOutMac[H2_MAC_STR_LEN] = "";
 bool s_cfgMacLoaded = false;
 
 char s_line[kLineMax];
 size_t s_lineLen = 0;
 uint32_t s_macResyncAtMs = 0;
+uint32_t s_bootRetryMs = 3000u;  // do první OK teploty: 3s → 6s → … max 15s
 char s_lastRoomRsp[kLineMax] = "";
-char s_lastOutRsp[kLineMax] = "";
 
 ClimateBridgeOtaState s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
 char s_bridgeOtaIp[20] = "";
@@ -139,13 +132,6 @@ void refreshCfgMacCache() {
     strncpy(s_cfgMac, BLE_METER_MAC, sizeof(s_cfgMac) - 1);
     s_cfgMac[sizeof(s_cfgMac) - 1] = '\0';
   }
-  if (storageLoadBleOutdoorMac(mac, sizeof(mac))) {
-    strncpy(s_cfgOutMac, mac, sizeof(s_cfgOutMac) - 1);
-    s_cfgOutMac[sizeof(s_cfgOutMac) - 1] = '\0';
-  } else {
-    strncpy(s_cfgOutMac, BLE_OUTDOOR_MAC, sizeof(s_cfgOutMac) - 1);
-    s_cfgOutMac[sizeof(s_cfgOutMac) - 1] = '\0';
-  }
   s_cfgMacLoaded = true;
 }
 
@@ -182,28 +168,15 @@ bool humValid(float h) {
   return h >= 0.0f && h <= 100.0f && h > (UI_TEPLOTA_NEPLATNA + 1.0f);
 }
 
-void formatSensorLineUnlocked(char* buf, size_t len, bool outdoor) {
+void formatSensorLineUnlocked(char* buf, size_t len) {
   if (!buf || len == 0) {
     return;
   }
-  float t = UI_TEPLOTA_NEPLATNA;
-  float h = UI_TEPLOTA_NEPLATNA;
-  int batt = -1;
-  int rssi = 0;
-  bool ok = false;
-  if (outdoor) {
-    ok = s_outOk;
-    t = s_outTempC;
-    h = s_outHum;
-    batt = s_outBatt;
-    rssi = s_outRssi;
-  } else {
-    ok = s_ok;
-    t = s_tempC;
-    h = s_hum;
-    batt = s_batt;
-    rssi = s_rssi;
-  }
+  const bool ok = s_ok;
+  const float t = s_tempC;
+  const float h = s_hum;
+  const int batt = s_batt;
+  const int rssi = s_rssi;
 
   if (!ok || t <= (UI_TEPLOTA_NEPLATNA + 1.0f)) {
     strncpy(buf, "---", len - 1);
@@ -211,12 +184,7 @@ void formatSensorLineUnlocked(char* buf, size_t len, bool outdoor) {
     return;
   }
 
-  size_t n = 0;
-  if (outdoor) {
-    n = snprintf(buf, len, "OUT T=%.1f", t);
-  } else {
-    n = snprintf(buf, len, "T=%.1f", t);
-  }
+  size_t n = snprintf(buf, len, "T=%.1f", t);
   if (humValid(h)) {
     n += snprintf(buf + n, len - n, " H=%.0f", h);
   }
@@ -226,9 +194,9 @@ void formatSensorLineUnlocked(char* buf, size_t len, bool outdoor) {
   snprintf(buf + n, len - n, " R=%d", rssi);
 }
 
-void formatSensorLine(char* buf, size_t len, bool outdoor) {
+void formatSensorLine(char* buf, size_t len) {
   portENTER_CRITICAL(&s_mux);
-  formatSensorLineUnlocked(buf, len, outdoor);
+  formatSensorLineUnlocked(buf, len);
   portEXIT_CRITICAL(&s_mux);
 }
 
@@ -244,32 +212,12 @@ void applyRoomReading(float t, float h, int batt, int rssi) {
   }
   s_ok = true;
   s_lastSeenMs = millis();
-  formatSensorLineUnlocked(s_lastRoomRsp, sizeof(s_lastRoomRsp), false);
+  formatSensorLineUnlocked(s_lastRoomRsp, sizeof(s_lastRoomRsp));
   portEXIT_CRITICAL(&s_mux);
 
   uiEez.sig_ble = true;
   uiEez.teplota_vnitrni = t;
   Serial.printf("[ROOM] H2 T=%.1f H=%.1f bat=%d rssi=%d\n", t, h, batt, rssi);
-}
-
-void applyOutdoorReading(float t, float h, int batt, int rssi) {
-  portENTER_CRITICAL(&s_mux);
-  s_outTempC = t;
-  s_outRssi = rssi;
-  if (humValid(h)) {
-    s_outHum = h;
-  }
-  if (batt >= 0) {
-    s_outBatt = batt;
-  }
-  s_outOk = true;
-  s_outLastSeenMs = millis();
-  formatSensorLineUnlocked(s_lastOutRsp, sizeof(s_lastOutRsp), true);
-  portEXIT_CRITICAL(&s_mux);
-
-  uiEez.teplota_venkovni = t;
-  Serial.printf("[ROOM] H2 OUT T=%.1f H=%.1f bat=%d rssi=%d\n", t, h, batt, rssi);
-  s_macResyncAtMs = 0;
 }
 
 void handleFoundLine(const char* line) {
@@ -306,9 +254,8 @@ void copyMacToken(const char* src, char* dst, size_t dstLen) {
 }
 
 void handleCfgLine(const char* line) {
-  // CFG ROOM=... OUT=...
+  // CFG ROOM=...
   const char* room = strstr(line, "ROOM=");
-  const char* out = strstr(line, "OUT=");
   char mac[H2_MAC_STR_LEN];
   Serial.printf("[ROOM] H2 %s\n", line);
   if (room) {
@@ -317,15 +264,6 @@ void handleCfgLine(const char* line) {
       storageSaveBleRoomMac(mac);
       strncpy(s_cfgMac, mac, sizeof(s_cfgMac) - 1);
       s_cfgMac[sizeof(s_cfgMac) - 1] = '\0';
-      s_cfgMacLoaded = true;
-    }
-  }
-  if (out) {
-    copyMacToken(out + 4, mac, sizeof(mac));
-    if (!isZeroMac(mac) && looksLikeMac(mac)) {
-      storageSaveBleOutdoorMac(mac);
-      strncpy(s_cfgOutMac, mac, sizeof(s_cfgOutMac) - 1);
-      s_cfgOutMac[sizeof(s_cfgOutMac) - 1] = '\0';
       s_cfgMacLoaded = true;
     }
   }
@@ -599,23 +537,21 @@ void parseLine(char* line) {
     return;
   }
 
-  const bool isOut = (strncmp(line, "OUT ", 4) == 0);
-  char* payload = isOut ? line + 4 : line;
+  // Legacy "OUT …" z bridge ignorujeme — venkovní = Modbus TČ.
+  if (strncmp(line, "OUT ", 4) == 0) {
+    return;
+  }
 
   float t = UI_TEPLOTA_NEPLATNA;
   float h = UI_TEPLOTA_NEPLATNA;
   int batt = -1;
   int rssi = 0;
   bool haveT = false;
-  parseTelemetryFields(payload, &t, &h, &batt, &rssi, &haveT);
+  parseTelemetryFields(line, &t, &h, &batt, &rssi, &haveT);
   if (!haveT) {
     return;
   }
-  if (isOut) {
-    applyOutdoorReading(t, h, batt, rssi);
-  } else {
-    applyRoomReading(t, h, batt, rssi);
-  }
+  applyRoomReading(t, h, batt, rssi);
 }
 
 void feedByte(char c) {
@@ -645,17 +581,9 @@ void pushStoredMacToH2() {
     char cmd[48];
     snprintf(cmd, sizeof(cmd), "SET ROOM=%s", s_cfgMac);
     sendCmd(cmd);
-  }
-  if (!isZeroMac(s_cfgOutMac) && looksLikeMac(s_cfgOutMac)) {
-    char cmd[48];
-    snprintf(cmd, sizeof(cmd), "SET OUT=%s", s_cfgOutMac);
-    sendCmd(cmd);
-  }
-  if (isZeroMac(s_cfgMac) && isZeroMac(s_cfgOutMac)) {
-    sendCmd("GET CFG");
-  } else {
-    // Hned požádej H2 o první reading (nečekat na interval pollu)
     sendCmd(H2_CMD_POLL);
+  } else {
+    sendCmd("GET CFG");
   }
 }
 
@@ -673,14 +601,16 @@ void climateRoomInit(void) {
   Serial.printf("[ROOM] UART H2 RX=G%d TX=G%d @ %u\n",
                 CLIMATE_ROOM_UART_RX_PIN, CLIMATE_ROOM_UART_TX_PIN,
                 (unsigned)CLIMATE_ROOM_UART_BAUD);
-  Serial.printf("[ROOM] cfg room=%s out=%s\n", s_cfgMac, s_cfgOutMac);
+  Serial.printf("[ROOM] cfg room=%s\n", s_cfgMac);
   delay(500);
   sendCmd("GET CFG");
   delay(50);
   sendCmd(H2_CMD_GET_INFO);
   delay(100);
   pushStoredMacToH2();
-  s_macResyncAtMs = millis() + 60000UL;
+  // První retry brzy — bridge nemusí být hned ready (dřív 60 s = „minuta ___“).
+  s_bootRetryMs = 3000u;
+  s_macResyncAtMs = millis() + s_bootRetryMs;
 }
 
 void climateRoomTick(void) {
@@ -701,26 +631,27 @@ void climateRoomTick(void) {
     Serial.println("[ROOM] scan timeout");
   }
 
-  if (!climateRoomOutdoorIsOk() && s_macResyncAtMs != 0 &&
+  if (!climateRoomIsOk() && s_macResyncAtMs != 0 &&
       millis() >= s_macResyncAtMs) {
-    s_macResyncAtMs = millis() + 60000UL;
-    Serial.println("[ROOM] outdoor stale — resync MAC + POLL");
+    if (s_bootRetryMs < 15000u) {
+      s_bootRetryMs = s_bootRetryMs < 8000u ? (s_bootRetryMs + 3000u) : 15000u;
+    }
+    s_macResyncAtMs = millis() + s_bootRetryMs;
+    Serial.printf("[ROOM] no data — resync MAC + POLL (next %lu ms)\n",
+                  (unsigned long)s_bootRetryMs);
     pushStoredMacToH2();
+  } else if (climateRoomIsOk()) {
+    // Po první OK teplotě stačí pomalejší hlídání výpadku
+    s_bootRetryMs = 30000u;
   }
 
   bool ok = false;
-  bool outOk = false;
   float temp = UI_TEPLOTA_NEPLATNA;
-  float outTemp = UI_TEPLOTA_NEPLATNA;
   uint32_t lastSeen = 0;
-  uint32_t outLast = 0;
   portENTER_CRITICAL(&s_mux);
   ok = s_ok;
-  outOk = s_outOk;
   temp = s_tempC;
-  outTemp = s_outTempC;
   lastSeen = s_lastSeenMs;
-  outLast = s_outLastSeenMs;
   portEXIT_CRITICAL(&s_mux);
 
   if (ok && (millis() - lastSeen) > kStaleMs) {
@@ -732,19 +663,9 @@ void climateRoomTick(void) {
     temp = UI_TEPLOTA_NEPLATNA;
     Serial.println("[ROOM] timeout — zadna data z H2 (pokoj)");
   }
-  if (outOk && (millis() - outLast) > kStaleMs) {
-    portENTER_CRITICAL(&s_mux);
-    s_outOk = false;
-    s_outTempC = UI_TEPLOTA_NEPLATNA;
-    portEXIT_CRITICAL(&s_mux);
-    outOk = false;
-    outTemp = UI_TEPLOTA_NEPLATNA;
-    Serial.println("[ROOM] timeout — zadna data z H2 (venku)");
-  }
 
-  uiEez.sig_ble = ok || outOk;
+  uiEez.sig_ble = ok;
   uiEez.teplota_vnitrni = temp;
-  uiEez.teplota_venkovni = outTemp;
 }
 
 void climateRoomRequestNow(void) {
@@ -794,20 +715,6 @@ bool climateRoomSetRoomMac(const char* mac) {
   s_cfgMacLoaded = true;
   char cmd[48];
   snprintf(cmd, sizeof(cmd), "SET ROOM=%s", mac);
-  sendCmd(cmd);
-  return true;
-}
-
-bool climateRoomSetOutdoorMac(const char* mac) {
-  if (!looksLikeMac(mac)) {
-    return false;
-  }
-  storageSaveBleOutdoorMac(mac);
-  strncpy(s_cfgOutMac, mac, sizeof(s_cfgOutMac) - 1);
-  s_cfgOutMac[sizeof(s_cfgOutMac) - 1] = '\0';
-  s_cfgMacLoaded = true;
-  char cmd[48];
-  snprintf(cmd, sizeof(cmd), "SET OUT=%s", mac);
   sendCmd(cmd);
   return true;
 }
@@ -867,22 +774,6 @@ void climateRoomGetConfiguredMac(char* buf, size_t len) {
   }
 }
 
-void climateRoomGetConfiguredOutdoorMac(char* buf, size_t len) {
-  if (!buf || len == 0) {
-    return;
-  }
-  if (!s_cfgMacLoaded) {
-    refreshCfgMacCache();
-  }
-  if (!isZeroMac(s_cfgOutMac)) {
-    strncpy(buf, s_cfgOutMac, len - 1);
-    buf[len - 1] = '\0';
-  } else {
-    strncpy(buf, "---", len);
-    buf[len - 1] = '\0';
-  }
-}
-
 float climateRoomTempC(void) {
   portENTER_CRITICAL(&s_mux);
   const float t = s_tempC;
@@ -911,47 +802,8 @@ int climateRoomRssi(void) {
   return r;
 }
 
-bool climateRoomOutdoorIsOk(void) {
-  portENTER_CRITICAL(&s_mux);
-  const bool ok = s_outOk;
-  portEXIT_CRITICAL(&s_mux);
-  return ok;
-}
-
-float climateRoomOutdoorTempC(void) {
-  portENTER_CRITICAL(&s_mux);
-  const float t = s_outTempC;
-  portEXIT_CRITICAL(&s_mux);
-  return t;
-}
-
-float climateRoomOutdoorHumidity(void) {
-  portENTER_CRITICAL(&s_mux);
-  const float h = s_outHum;
-  portEXIT_CRITICAL(&s_mux);
-  return h;
-}
-
-int climateRoomOutdoorBatteryPct(void) {
-  portENTER_CRITICAL(&s_mux);
-  const int b = s_outBatt;
-  portEXIT_CRITICAL(&s_mux);
-  return b;
-}
-
-int climateRoomOutdoorRssi(void) {
-  portENTER_CRITICAL(&s_mux);
-  const int r = s_outRssi;
-  portEXIT_CRITICAL(&s_mux);
-  return r;
-}
-
 void climateRoomGetLastRoomResponse(char* buf, size_t len) {
-  formatSensorLine(buf, len, false);
-}
-
-void climateRoomGetLastOutdoorResponse(char* buf, size_t len) {
-  formatSensorLine(buf, len, true);
+  formatSensorLine(buf, len);
 }
 
 void climateRoomStatusText(char* buf, size_t buflen) {
@@ -962,33 +814,9 @@ void climateRoomStatusText(char* buf, size_t buflen) {
     snprintf(buf, buflen, "Skenuji SwitchBot...");
     return;
   }
-  const bool roomOk = climateRoomIsOk();
-  const bool outOk = climateRoomOutdoorIsOk();
-  if (roomOk && outOk) {
-    const int outBat = climateRoomOutdoorBatteryPct();
-    if (outBat >= 0) {
-      snprintf(buf, buflen, "Pokoj %.1f °C · Venku %.1f °C (bat %d%%)",
-               climateRoomTempC(), climateRoomOutdoorTempC(), outBat);
-    } else {
-      snprintf(buf, buflen, "Pokoj %.1f °C · Venku %.1f °C", climateRoomTempC(),
-               climateRoomOutdoorTempC());
-    }
-    return;
-  }
-  if (roomOk) {
+  if (climateRoomIsOk()) {
     snprintf(buf, buflen, "H2 %.1f °C · bat %d%% · rssi %d", climateRoomTempC(),
              climateRoomBatteryPct(), climateRoomRssi());
-    return;
-  }
-  if (outOk) {
-    const int outBat = climateRoomOutdoorBatteryPct();
-    const int outRssi = climateRoomOutdoorRssi();
-    if (outBat >= 0) {
-      snprintf(buf, buflen, "Venku %.1f °C · bat %d%% · rssi %d",
-               climateRoomOutdoorTempC(), outBat, outRssi);
-    } else {
-      snprintf(buf, buflen, "Venku %.1f °C", climateRoomOutdoorTempC());
-    }
     return;
   }
   char mac[H2_MAC_STR_LEN];

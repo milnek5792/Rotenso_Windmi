@@ -9,6 +9,7 @@
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
 #include "ui_eez_energy.h"
+#include "ui_eez_hp_config.h"
 #include "ui_eez_bridge_diag.h"
 #include "ui_eez_screens.h"
 #include "ui_eez_settings.h"
@@ -110,9 +111,9 @@ lv_obj_t* hitTestSettings(int tx, int ty) {
       settingsObj.btn_ble,         settingsObj.btn_mac,
       settingsObj.btn_meter1,        settingsObj.btn_meter2,
       settingsObj.btn_meter3,        settingsObj.btn_spotreba,
-      settingsObj.btn_plan,        settingsObj.btn_servis,
-      settingsObj.btn_sleep,      settingsObj.slider_brightness,
-      settingsObj.btn_bridge,
+      settingsObj.btn_hp_config,   settingsObj.btn_plan,
+      settingsObj.btn_servis,      settingsObj.btn_sleep,
+      settingsObj.slider_brightness, settingsObj.btn_bridge,
   };
   return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
 }
@@ -177,6 +178,23 @@ lv_obj_t* hitTestEnergy(int tx, int ty) {
   return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
 }
 
+lv_obj_t* hitTestHpConfig(int tx, int ty) {
+  if (!hpConfigObj.screen) {
+    return nullptr;
+  }
+  lv_obj_t* list[] = {
+      hpConfigObj.btn_back,        hpConfigObj.btn_preset,
+      hpConfigObj.btn_refresh,     hpConfigObj.btn_ui_type_m,
+      hpConfigObj.btn_ui_type_p,   hpConfigObj.btn_min_oat_m,
+      hpConfigObj.btn_min_oat_p,   hpConfigObj.btn_ibh_oat_m,
+      hpConfigObj.btn_ibh_oat_p,   hpConfigObj.btn_ibh_warm_m,
+      hpConfigObj.btn_ibh_warm_p,  hpConfigObj.btn_ibh_dt_m,
+      hpConfigObj.btn_ibh_dt_p,    hpConfigObj.btn_pump_dt_m,
+      hpConfigObj.btn_pump_dt_p,
+  };
+  return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
+}
+
 lv_obj_t* hitTestDynamic(int tx, int ty) {
   if (lv_obj_t* modal = uiBridgeDiagHitTest(tx, ty)) {
     return modal;
@@ -192,6 +210,9 @@ lv_obj_t* hitTestDynamic(int tx, int ty) {
   }
   if (uiIsEnergyScreen()) {
     return hitTestEnergy(tx, ty);
+  }
+  if (uiIsHpConfigScreen()) {
+    return hitTestHpConfig(tx, ty);
   }
   return nullptr;
 }

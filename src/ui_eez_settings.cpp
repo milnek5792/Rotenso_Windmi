@@ -190,9 +190,7 @@ void updateMeterButtons() {
 
 void updateBlePanelLabels() {
   char roomMac[H2_MAC_STR_LEN];
-  char outMac[H2_MAC_STR_LEN];
   climateRoomGetConfiguredMac(roomMac, sizeof(roomMac));
-  climateRoomGetConfiguredOutdoorMac(outMac, sizeof(outMac));
 
   char line[96];
   const ClimateBridgeOtaState otaSt = climateRoomBridgeOtaState();
@@ -211,27 +209,10 @@ void updateBlePanelLabels() {
     if (n > 0) {
       snprintf(line, sizeof(line), "Nalezeno %d - vyber Tepl.1-%d", n,
                n > 3 ? 3 : n);
-    } else if (climateRoomIsOk() && climateRoomOutdoorIsOk()) {
-      const int outBat = climateRoomOutdoorBatteryPct();
-      if (outBat >= 0) {
-        snprintf(line, sizeof(line), "Pokoj %.1f °C · Venku %.1f °C (bat %d%%)",
-                 (double)climateRoomTempC(), (double)climateRoomOutdoorTempC(),
-                 outBat);
-      } else {
-        snprintf(line, sizeof(line), "Pokoj %.1f °C · Venku %.1f °C",
-                 (double)climateRoomTempC(), (double)climateRoomOutdoorTempC());
-      }
     } else if (climateRoomIsOk()) {
-      snprintf(line, sizeof(line), "Pokoj %.1f °C", (double)climateRoomTempC());
-    } else if (climateRoomOutdoorIsOk()) {
-      const int outBat = climateRoomOutdoorBatteryPct();
-      const int outRssi = climateRoomOutdoorRssi();
-      if (outBat >= 0) {
-        snprintf(line, sizeof(line), "Venku %.1f °C · bat %d%% · rssi %d",
-                 (double)climateRoomOutdoorTempC(), outBat, outRssi);
-      } else {
-        snprintf(line, sizeof(line), "Venku %.1f °C", (double)climateRoomOutdoorTempC());
-      }
+      snprintf(line, sizeof(line), "Pokoj %.1f °C · bat %d%% · rssi %d",
+               (double)climateRoomTempC(), climateRoomBatteryPct(),
+               climateRoomRssi());
     } else {
       snprintf(line, sizeof(line), "Čekám na data - Skenuj / MAC");
     }
@@ -241,19 +222,12 @@ void updateBlePanelLabels() {
   char macLine[48];
   snprintf(macLine, sizeof(macLine), "Pokoj: %s", roomMac);
   setLabelIfChanged(settingsObj.lbl_mac_room, macLine);
-  snprintf(macLine, sizeof(macLine), "Venku: %s", outMac);
-  setLabelIfChanged(settingsObj.lbl_mac_out, macLine);
 
   char rsp[96];
   climateRoomGetLastRoomResponse(rsp, sizeof(rsp));
   setLabelIfChanged(settingsObj.lbl_rsp_room, rsp);
   setTextColorCached(settingsObj.lbl_rsp_room,
                      climateRoomIsOk() ? kColText : kColMuted);
-
-  climateRoomGetLastOutdoorResponse(rsp, sizeof(rsp));
-  setLabelIfChanged(settingsObj.lbl_rsp_out, rsp);
-  setTextColorCached(settingsObj.lbl_rsp_out,
-                     climateRoomOutdoorIsOk() ? kColText : kColMuted);
 
   uint32_t col = kColMuted;
   if (otaSt == CLIMATE_BRIDGE_OTA_READY) {
@@ -262,7 +236,7 @@ void updateBlePanelLabels() {
     col = kColOrange;
   } else if (otaSt == CLIMATE_BRIDGE_OTA_FAIL) {
     col = kColOrange;
-  } else if (climateRoomIsOk() || climateRoomOutdoorIsOk()) {
+  } else if (climateRoomIsOk()) {
     col = kColGreen;
   } else if (climateRoomIsBusy()) {
     col = kColOrange;
@@ -426,17 +400,10 @@ void uiSettingsCreate() {
   settingsObj.lbl_mac_room =
       makeLabel(settingsObj.panel_ble, kPad, kBodyY + kLine, bleW - 2 * kPad,
                 "Pokoj: ---", kColMuted);
-  settingsObj.lbl_mac_out =
-      makeLabel(settingsObj.panel_ble, kPad, kBodyY + 2 * kLine, bleW - 2 * kPad,
-                "Venku: ---", kColMuted);
   settingsObj.lbl_rsp_room =
-      makeLabel(settingsObj.panel_ble, kPad, kBodyY + 3 * kLine, bleW - 2 * kPad,
+      makeLabel(settingsObj.panel_ble, kPad, kBodyY + 2 * kLine, bleW - 2 * kPad,
                 "---", kColMuted);
   lv_label_set_long_mode(settingsObj.lbl_rsp_room, LV_LABEL_LONG_WRAP);
-  settingsObj.lbl_rsp_out =
-      makeLabel(settingsObj.panel_ble, kPad, kBodyY + 4 * kLine, bleW - 2 * kPad,
-                "---", kColMuted);
-  lv_label_set_long_mode(settingsObj.lbl_rsp_out, LV_LABEL_LONG_WRAP);
 
   const int row2Y = bleH - kBtnH - kPad;
   const int row1Y = row2Y - kBtnH - kGap;
@@ -470,8 +437,11 @@ void uiSettingsCreate() {
   const int navY2 = sysH - kPad - kNavBtnH;
   const int navY1 = navY2 - kNavBtnH - kGap * 3;
   settingsObj.btn_spotreba = makeButton(
-      settingsObj.panel_sys, navColX, navY1, navColW, kNavBtnH,
+      settingsObj.panel_sys, navColX, navY1, navBtnW, kNavBtnH,
       "Spotřeba", action_akce_settings_spotreba, 0x48484Fu, kColOrange);
+  settingsObj.btn_hp_config = makeButton(
+      settingsObj.panel_sys, navColX + navBtnW + kGap, navY1, navBtnW, kNavBtnH,
+      "TČ", action_akce_settings_hp_config, kColOrange);
   settingsObj.btn_plan = makeButton(
       settingsObj.panel_sys, navColX, navY2, navBtnW, kNavBtnH,
       "Plán", action_akce_settings_plan, kColPurple);

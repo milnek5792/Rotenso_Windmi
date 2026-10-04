@@ -11,9 +11,9 @@ extern "C" {
 
 #define REG_HISTORY_LEN 60
 
-/** Výstupní SP vody (LIN) — hard safety. */
-#define REG_T_WATER_MIN_C 20
-#define REG_T_WATER_MAX_C 45
+/** Výstupní SP vody (Modbus 0191H) — Windmi 25–63 °C. */
+#define REG_T_WATER_MIN_C 25
+#define REG_T_WATER_MAX_C 63
 
 /** PI korekce k ekvitermnímu základu [°C]. */
 #define REG_CORR_MIN_C (-5.0f)
@@ -70,6 +70,8 @@ struct RegulatorSnapshot {
   bool room_ok;
   bool outdoor_ok;
   bool use_equitherm;
+  /** true = klasická ekvitermá (bez pokojového PI). */
+  bool classic_equitherm;
   uint32_t ms_since_pid;
   uint32_t ms_to_next_pid;
   uint32_t pid_period_ms;
@@ -96,6 +98,8 @@ void climateRegulatorSetDefaults(RegulatorConfig* cfg);
 void climateRegulatorSetUseEquitherm(bool on);
 bool climateRegulatorUseEquitherm(void);
 bool climateRegulatorIsEcoMode(void);
+/** Posun ekvitermní křivky ±1 °C (clamp 0±5). */
+void climateRegulatorAdjustOffset(float deltaC);
 /** Ekvitermní SP vody pro danou venkovní teplotu (včetně offset_c). */
 float climateRegulatorEquithermWaterAt(float outdoorC);
 

@@ -102,6 +102,11 @@ const char* get_var_teplota_vody_set() {
   if (uiEez.rezim == UI_REZIM_AUTO) {
     return fmtTempDeci(climateRegulatorRoomSpEffective());
   }
+  if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    RegulatorSnapshot snap{};
+    climateRegulatorGetSnapshot(&snap);
+    return fmtTemp(snap.t_water_sp_c);
+  }
   return fmtTemp(uiEez.teplota_vody_set);
 }
 void set_var_teplota_vody_set(float value) { uiEez.teplota_vody_set = value; }

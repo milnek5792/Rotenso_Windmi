@@ -31,9 +31,6 @@
 #ifndef BLE_METER_MAC_DEFAULT
 #define BLE_METER_MAC_DEFAULT "EC:6F:03:86:1E:6B"
 #endif
-#ifndef BLE_OUTDOOR_MAC_DEFAULT
-#define BLE_OUTDOOR_MAC_DEFAULT "E8:76:C3:46:66:14"
-#endif
 // Status LED: Xiao nemá uživatelskou LED → -1; DevKit/SuperMini WS2812 GPIO8
 #ifndef STATUS_LED_PIN
 #if defined(ARDUINO_XIAO_ESP32C3)
@@ -55,9 +52,9 @@ namespace {
 constexpr uint16_t kSbServiceUuid = 0xFD3D;
 constexpr uint16_t kSbCompanyId = 0x0969;
 constexpr uint32_t kScanMs = 10000;
-constexpr uint32_t kPollScanMs = 10000;  // oba senzory v jednom scanu (Meter vysílá ~1–4 s)
+constexpr uint32_t kPollScanMs = 10000;  // Meter vysílá ~1–4 s
 constexpr uint32_t kPollIntervalMs = 60000;
-constexpr uint32_t kMissRetryMs = 20000;   // venku/pokoj minul scan → dřívější opakování
+constexpr uint32_t kMissRetryMs = 5000;  // po MISS hned znovu (ne 20 s)
 constexpr int kFoundMax = 8;
 constexpr uint8_t kLedDim = 12;  // nízký jas WS2812
 
@@ -78,19 +75,12 @@ struct FoundEntry {
 
 Preferences s_prefs;
 uint8_t s_roomMac[6]{};
-uint8_t s_outMac[6]{};
 bool s_roomOk = false;
-bool s_outOk = false;
 
 float s_roomTemp = NAN;
 float s_roomHum = NAN;
 int s_roomBatt = -1;
 int s_roomRssi = 0;
-
-float s_outTemp = NAN;
-float s_outHum = NAN;
-int s_outBatt = -1;
-int s_outRssi = 0;
 
 bool s_scanBusy = false;
 bool s_discoveryMode = false;
@@ -105,7 +95,6 @@ uint32_t s_lastSendMs = 0;
 uint32_t s_lastBleOkMs = 0;
 uint32_t s_missRetryAtMs = 0;
 bool s_roomHitScan = false;
-bool s_outHitScan = false;
 uint32_t s_ledPulseUntilMs = 0;
 uint32_t s_ledHbMs = 0;
 bool s_ledHbOn = false;
@@ -170,8 +159,8 @@ void ledTick() {
   }
 
   const bool haveData =
-      (!isnan(s_roomTemp) || !isnan(s_outTemp)) &&
-      (s_lastBleOkMs != 0) && (now - s_lastBleOkMs) < 180000UL;
+      !isnan(s_roomTemp) && (s_lastBleOkMs != 0) &&
+      (now - s_lastBleOkMs) < 180000UL;
 
   // Heartbeat každých 2 s (~80 ms)
   if (now - s_ledHbMs >= 2000) {
@@ -236,21 +225,6 @@ bool macMatch(const uint8_t* nativeLe, const uint8_t target[6]) {
     }
   }
   return fwd || rev;
-}
-
-/** Venkovní Meter (WoSensorTHO): service data 0xFD3D má jen 3 B — baterie v p[2]. */
-bool parseFd3dOutdoorShort(const uint8_t* p, size_t n, int rssi, MeterReading* out) {
-  if (!p || n < 3 || !out) {
-    return false;
-  }
-  const int batt = (int)(p[2] & 0x7F);
-  if (batt > 100) {
-    return false;
-  }
-  out->valid = true;
-  out->batt = batt;
-  out->rssi = rssi;
-  return true;
 }
 
 bool parseFd3dService(const uint8_t* p, size_t n, int rssi, MeterReading* out) {
@@ -332,9 +306,6 @@ bool parseAdv(const uint8_t* adv, size_t len, int rssi, MeterReading* out) {
         if (plen >= 6 && parseFd3dService(payload, plen, rssi, &tmp)) {
           fd3d = tmp;
           gotFd3d = true;
-        } else if (plen >= 3 && parseFd3dOutdoorShort(payload, plen, rssi, &tmp)) {
-          fd3d = tmp;
-          gotFd3d = true;
         }
       }
     }
@@ -356,7 +327,6 @@ bool parseAdv(const uint8_t* adv, size_t len, int rssi, MeterReading* out) {
   } else {
     *out = mfr;
   }
-  // Sloučit: venkovní meter dává T/H v 0x0969 a baterii v krátkém 0xFD3D (často jiný paket).
   if (gotFd3d && gotMfr) {
     if (isnan(out->temp)) {
       out->temp = mfr.temp;
@@ -626,37 +596,15 @@ void mergeRoomReading(const MeterReading& reading, int rssi) {
   }
 }
 
-void mergeOutReading(const MeterReading& reading, int rssi) {
-  if (!isnan(reading.temp)) {
-    s_outTemp = reading.temp;
+void formatTelemetryLine(char* buf, size_t len) {
+  size_t n = snprintf(buf, len, "T=%.1f", s_roomTemp);
+  if (!isnan(s_roomHum) && s_roomHum >= 0.0f && s_roomHum <= 100.0f) {
+    n += snprintf(buf + n, len - n, " H=%.0f", s_roomHum);
   }
-  s_outRssi = rssi;
-  if (!isnan(reading.hum) && reading.hum >= 0.0f && reading.hum <= 100.0f) {
-    s_outHum = reading.hum;
+  if (s_roomBatt >= 0) {
+    n += snprintf(buf + n, len - n, " B=%d", s_roomBatt);
   }
-  if (reading.batt >= 0) {
-    s_outBatt = reading.batt;
-  }
-}
-
-void formatTelemetryLine(char* buf, size_t len, bool outdoor) {
-  const float t = outdoor ? s_outTemp : s_roomTemp;
-  const float h = outdoor ? s_outHum : s_roomHum;
-  const int batt = outdoor ? s_outBatt : s_roomBatt;
-  const int rssi = outdoor ? s_outRssi : s_roomRssi;
-  size_t n = 0;
-  if (outdoor) {
-    n = snprintf(buf, len, "OUT T=%.1f", t);
-  } else {
-    n = snprintf(buf, len, "T=%.1f", t);
-  }
-  if (!isnan(h) && h >= 0.0f && h <= 100.0f) {
-    n += snprintf(buf + n, len - n, " H=%.0f", h);
-  }
-  if (batt >= 0) {
-    n += snprintf(buf + n, len - n, " B=%d", batt);
-  }
-  snprintf(buf + n, len - n, " R=%d", rssi);
+  snprintf(buf + n, len - n, " R=%d", s_roomRssi);
 }
 
 void sendTelemetryRoom() {
@@ -664,42 +612,24 @@ void sendTelemetryRoom() {
     return;
   }
   char line[64];
-  formatTelemetryLine(line, sizeof(line), false);
+  formatTelemetryLine(line, sizeof(line));
   uartPrintf("%s\n", line);
 }
 
-void sendTelemetryOutdoor() {
-  if (isnan(s_outTemp)) {
-    return;
-  }
-  char line[64];
-  formatTelemetryLine(line, sizeof(line), true);
-  uartPrintf("%s\n", line);
-}
-
-void sendTelemetry(bool roomHit, bool outHit) {
-  if (!roomHit && !outHit) {
+void sendTelemetry(bool roomHit) {
+  if (!roomHit) {
     return;
   }
   if ((millis() - s_lastSendMs) < 500) {
     return;
   }
   s_lastSendMs = millis();
-  if (roomHit) {
-    sendTelemetryRoom();
-  }
-  if (outHit) {
-    sendTelemetryOutdoor();
-  }
-  if (roomHit || outHit) {
-    ledPulse(0, kLedDim, kLedDim, 80);  // cyan = telemetrie na Tab5
-  }
+  sendTelemetryRoom();
+  ledPulse(0, kLedDim, kLedDim, 80);  // cyan = telemetrie na Tab5
 }
 
 bool scanTargetsComplete() {
-  const bool roomDone = !s_roomOk || s_roomHitScan;
-  const bool outDone = !s_outOk || s_outHitScan;
-  return roomDone && outDone;
+  return !s_roomOk || s_roomHitScan;
 }
 
 void maybeStopScanEarly() {
@@ -743,32 +673,21 @@ void reportFoundList() {
 
 void sendCfg() {
   char room[20];
-  char out[20];
   macToStr(s_roomMac, room, sizeof(room));
-  macToStr(s_outMac, out, sizeof(out));
-  uartPrintf("CFG ROOM=%s OUT=%s\n", room, out);
+  uartPrintf("CFG ROOM=%s\n", room);
 }
 
 void saveMacs() {
   char room[20];
-  char out[20];
   macToStr(s_roomMac, room, sizeof(room));
-  macToStr(s_outMac, out, sizeof(out));
   s_prefs.putString("room_mac", room);
-  s_prefs.putString("out_mac", out);
 }
 
 void loadMacs() {
   String room = s_prefs.getString("room_mac", BLE_METER_MAC_DEFAULT);
-  String out = s_prefs.getString("out_mac", BLE_OUTDOOR_MAC_DEFAULT);
   s_roomOk = parseMac(room.c_str(), s_roomMac);
-  s_outOk = parseMac(out.c_str(), s_outMac);
   if (!s_roomOk) {
     memset(s_roomMac, 0, sizeof(s_roomMac));
-  }
-  if (!s_outOk) {
-    memset(s_outMac, 0, sizeof(s_outMac));
-    s_outOk = false;
   }
 }
 
@@ -779,30 +698,11 @@ bool setRoomMac(const uint8_t mac[6]) {
   return true;
 }
 
-bool setOutMac(const uint8_t mac[6]) {
-  memcpy(s_outMac, mac, 6);
-  s_outOk = true;
-  saveMacs();
-  return true;
-}
-
 bool setRoomByIndex(int idx1) {
   if (idx1 < 1 || idx1 > s_foundCount) {
     return false;
   }
   return setRoomMac(s_found[idx1 - 1].mac);
-}
-
-bool setOutByIndex(int idx1) {
-  if (idx1 < 1 || idx1 > s_foundCount) {
-    return false;
-  }
-  return setOutMac(s_found[idx1 - 1].mac);
-}
-
-uint32_t pollScanMs() {
-  // Venkovní senzor bývá dál / vysílá řídce — delší scan když je nakonfigurovaný.
-  return s_outOk ? 15000u : kPollScanMs;
 }
 
 class ScanCb : public NimBLEScanCallbacks {
@@ -816,11 +716,10 @@ class ScanCb : public NimBLEScanCallbacks {
     const uint8_t* payload = payloadVec.data();
     const size_t plen = payloadVec.size();
     const bool matchRoom = !s_discoveryMode && s_roomOk && macMatch(native, s_roomMac);
-    const bool matchOut = !s_discoveryMode && s_outOk && macMatch(native, s_outMac);
     MeterReading reading{};
 
     if (!parseAdv(payload, plen, rssi, &reading)) {
-      if (!matchRoom && !matchOut) {
+      if (!matchRoom) {
         return;
       }
       Serial.printf("[BLE] MAC hit rssi=%d ale parse fail\n", rssi);
@@ -840,13 +739,6 @@ class ScanCb : public NimBLEScanCallbacks {
       s_lastBleOkMs = millis();
       maybeStopScanEarly();
     }
-    if (matchOut) {
-      mergeOutReading(reading, rssi);
-      s_outHitScan = true;
-      s_lastBleOkMs = millis();
-      Serial.printf("[BLE] outdoor hit T=%.1f rssi=%d\n", reading.temp, rssi);
-      maybeStopScanEarly();
-    }
   }
 
   void onScanEnd(const NimBLEScanResults& results, int reason) override;
@@ -863,7 +755,6 @@ void finishScan() {
   const bool wantTelem = s_scanWantTelemetry;
   const bool wantOk = s_scanWantOk;
   const bool roomHit = s_roomHitScan;
-  const bool outHit = s_outHitScan;
 
   s_discoveryMode = false;
   s_scanBusy = false;
@@ -871,24 +762,15 @@ void finishScan() {
   s_scanWantOk = false;
   s_scanStartedMs = 0;
   s_roomHitScan = false;
-  s_outHitScan = false;
 
   if (discovery) {
     reportFoundList();
   }
   if (wantTelem) {
-    sendTelemetry(roomHit, outHit);
-    if (s_outOk && !outHit) {
-      char outStr[20];
-      macToStr(s_outMac, outStr, sizeof(outStr));
-      Serial.printf("[BLE] poll MISS outdoor MAC=%s — retry\n", outStr);
-      s_missRetryAtMs = millis() + kMissRetryMs;
-    }
+    sendTelemetry(roomHit);
     if (s_roomOk && !roomHit) {
       Serial.println("[BLE] poll MISS room — retry");
-      if (s_missRetryAtMs == 0) {
-        s_missRetryAtMs = millis() + kMissRetryMs;
-      }
+      s_missRetryAtMs = millis() + kMissRetryMs;
     }
   }
   if (wantOk) {
@@ -920,7 +802,6 @@ bool beginScan(uint32_t ms, bool discovery, bool wantOk, bool wantTelem) {
   s_scanWantTelemetry = wantTelem;
   s_scanStartedMs = millis();
   s_roomHitScan = false;
-  s_outHitScan = false;
   s_ledPulseUntilMs = 0;
   ledWrite(kLedDim + 6, kLedDim / 3, 0);  // oranžová = skenuju
 
@@ -1033,8 +914,8 @@ void handleCommand(char* line) {
   if (strcmp(line, "POLL") == 0) {
     Serial.println("[BLE] POLL");
     s_missRetryAtMs = 0;
-    if (s_roomOk || s_outOk) {
-      beginScan(pollScanMs(), false, true, true);
+    if (s_roomOk) {
+      beginScan(kPollScanMs, false, true, true);
     } else {
       uartPrint("OK\n");
     }
@@ -1067,36 +948,6 @@ void handleCommand(char* line) {
       }
     }
     uartPrint("ERR ROOM\n");
-    return;
-  }
-  if (strncmp(line, "SET OUT=", 8) == 0) {
-    const char* val = line + 8;
-    if (strcmp(val, "0") == 0 || strcasecmp(val, "OFF") == 0) {
-      memset(s_outMac, 0, sizeof(s_outMac));
-      s_outOk = false;
-      s_outTemp = NAN;
-      saveMacs();
-      uartPrint("OK\n");
-      sendCfg();
-      return;
-    }
-    if (strchr(val, ':') != nullptr) {
-      uint8_t mac[6];
-      if (parseMac(val, mac)) {
-        setOutMac(mac);
-        uartPrint("OK\n");
-        sendCfg();
-        return;
-      }
-    } else {
-      const int idx = atoi(val);
-      if (setOutByIndex(idx)) {
-        uartPrint("OK\n");
-        sendCfg();
-        return;
-      }
-    }
-    uartPrint("ERR OUT\n");
     return;
   }
   uartPrintf("ERR unknown: %s\n", line);
@@ -1140,11 +991,9 @@ void setup() {
   loadEspNowChannel();
 
   char room[20];
-  char out[20];
   macToStr(s_roomMac, room, sizeof(room));
-  macToStr(s_outMac, out, sizeof(out));
-  Serial.printf("[BLE] Xiao C3 UART TX=%d RX=%d room=%s out=%s LED=%d\n",
-                BRIDGE_TX_PIN, BRIDGE_RX_PIN, room, out, STATUS_LED_PIN);
+  Serial.printf("[BLE] Xiao C3 UART TX=%d RX=%d room=%s LED=%d\n",
+                BRIDGE_TX_PIN, BRIDGE_RX_PIN, room, STATUS_LED_PIN);
 
   NimBLEDevice::init("");
   sendCfg();
@@ -1155,9 +1004,9 @@ void setup() {
 
 
   // První teploty hned po startu (ne až po intervalu pollu)
-  if (s_roomOk || s_outOk) {
+  if (s_roomOk) {
     Serial.println("[BLE] boot POLL");
-    beginScan(pollScanMs(), false, false, true);
+    beginScan(kPollScanMs, false, false, true);
     s_lastPollMs = millis();
   }
 }
@@ -1191,24 +1040,23 @@ void loop() {
 
   // Watchdog: onScanEnd někdy nedorazí
   if (s_scanBusy && s_scanStartedMs != 0 &&
-      (now - s_scanStartedMs) > (pollScanMs() + 3000UL)) {
+      (now - s_scanStartedMs) > (kPollScanMs + 3000UL)) {
     Serial.println("[BLE] scan watchdog — force end");
     NimBLEDevice::getScan()->stop();
     finishScan();
   }
 
   if (!s_scanBusy && s_missRetryAtMs != 0 && now >= s_missRetryAtMs &&
-      (s_roomOk || s_outOk)) {
+      s_roomOk) {
     s_missRetryAtMs = 0;
     Serial.println("[BLE] miss retry scan");
-    beginScan(pollScanMs(), false, false, true);
+    beginScan(kPollScanMs, false, false, true);
   }
 
-  if (!s_scanBusy && (s_roomOk || s_outOk) &&
-      (now - s_lastPollMs) >= kPollIntervalMs) {
+  if (!s_scanBusy && s_roomOk && (now - s_lastPollMs) >= kPollIntervalMs) {
     s_lastPollMs = now;
     s_missRetryAtMs = 0;
-    beginScan(pollScanMs(), false, false, true);
+    beginScan(kPollScanMs, false, false, true);
   }
 
   ledTick();

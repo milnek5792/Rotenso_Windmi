@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <math.h>
 
 UiEezModel uiEez;
 
@@ -100,43 +101,60 @@ void uiEezSyncFromBus() {
   {
     const uint8_t a0Sp = maA0 ? lgModelA0Bajt(8) : 0;
     const bool a0SpPlatny = maA0 && a0Sp >= 15 && a0Sp <= 65;
+    // MAN: SP z Modbus (a0Snap[8] / mCilova) — mCilova platí i bez bajtu 8
+    const bool mSpPlatny = maA0 && mCilova >= 15 && mCilova <= 65;
+    const uint8_t busSp = a0SpPlatny ? a0Sp : (mSpPlatny ? mCilova : 0);
+    const bool busSpPlatny = busSp >= 15 && busSp <= 65;
 
     if (uiEez.sp_pending != 0) {
-      if (a0SpPlatny && a0Sp == uiEez.sp_pending) {
+      if (busSpPlatny && busSp == uiEez.sp_pending) {
         uiEez.sp_pending = 0;
-        uiEez.teplota_vody_set = static_cast<float>(a0Sp);
+        uiEez.teplota_vody_set = static_cast<float>(busSp);
       } else {
         uiEez.teplota_vody_set = static_cast<float>(uiEez.sp_pending);
       }
-    } else if (a0SpPlatny) {
-      uiEez.teplota_vody_set = static_cast<float>(a0Sp);
+    } else if (busSpPlatny) {
+      uiEez.teplota_vody_set = static_cast<float>(busSp);
     } else if (cilova >= 15 && cilova <= 65) {
       uiEez.teplota_vody_set = static_cast<float>(cilova);
-    } else if (uiEez.rezim != UI_REZIM_AUTO) {
+    } else if (!uiRezimRegulatorWritesWater(uiEez.rezim)) {
       uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
     }
   }
 
-  static uint8_t s_holdVstup = 0;
-  static uint8_t s_holdVystup = 0;
-  if (maA0) {
-    if (mVstupni > 0) {
-      s_holdVstup = mVstupni;
-    }
-    if (mVystupni > 0) {
-      s_holdVystup = mVystupni;
-    }
-  } else {
-    s_holdVstup = 0;
-    s_holdVystup = 0;
+  static float s_holdVstup = NAN;
+  static float s_holdVystup = NAN;
+  // Aktualizuj hold při jakékoli platné hodnotě (nečekej na obě)
+  if (!isnan(mVstupniC) && mVstupniOk) {
+    s_holdVstup = mVstupniC;
   }
-  const uint8_t vstupShow = (mVstupni > 0) ? mVstupni : s_holdVstup;
-  const uint8_t vystupShow = (mVystupni > 0) ? mVystupni : s_holdVystup;
-  uiEez.teplota_vody_vstup = uiTeplotaC(vstupShow, maA0 && vstupShow > 0);
-  uiEez.teplota_vody_vystup = uiTeplotaC(vystupShow, maA0 && vystupShow > 0);
+  if (!isnan(mVystupniC) && mVystupniOk) {
+    s_holdVystup = mVystupniC;
+  }
+  const float vstupShow =
+      (mVstupniOk && !isnan(mVstupniC)) ? mVstupniC : s_holdVstup;
+  const float vystupShow =
+      (mVystupniOk && !isnan(mVystupniC)) ? mVystupniC : s_holdVystup;
+  // Zobraz i při krátkém výpadku live — hold drží poslední dobré hodnoty
+  const bool vstupPlatny = !isnan(vstupShow);
+  const bool vystupPlatny = !isnan(vystupShow);
+  uiEez.teplota_vody_vstup =
+      vstupPlatny ? vstupShow : UI_TEPLOTA_NEPLATNA;
+  uiEez.teplota_vody_vystup =
+      vystupPlatny ? vystupShow : UI_TEPLOTA_NEPLATNA;
 
-  if (maA0 && vstupShow > 0 && vystupShow > 0) {
-    uiEez.teplota_spad = (float)((int)vystupShow - (int)vstupShow);
+  // Venkovní teplota = Modbus TČ (0001H), stejný hold model jako Tin/Tout.
+  static float s_holdVenkovni = NAN;
+  if (mVenkovniOk && !isnan(mVenkovniC)) {
+    s_holdVenkovni = mVenkovniC;
+  }
+  const float venkShow =
+      (mVenkovniOk && !isnan(mVenkovniC)) ? mVenkovniC : s_holdVenkovni;
+  uiEez.teplota_venkovni =
+      !isnan(venkShow) ? venkShow : UI_TEPLOTA_NEPLATNA;
+
+  if (vstupPlatny && vystupPlatny) {
+    uiEez.teplota_spad = vystupShow - vstupShow;
     if (uiEez.teplota_spad < 0) {
       uiEez.teplota_spad = -uiEez.teplota_spad;
     }
@@ -144,31 +162,27 @@ void uiEezSyncFromBus() {
     uiEez.teplota_spad = UI_TEPLOTA_NEPLATNA;
   }
 
-  const bool sessionZap =
-      cilovyZapnutoTab5 || tcPozadavekZap || cekameNaOrigStart;
-  const bool tcBeziLin = maA0 && lgJeTcProvoz(b2, b3);
-  const bool stopNaSbernici =
-      pozadavekNaZapis && pozadavekZmenaStartu && !cilovyZapnutoTab5;
+  const bool runOn = maA0 && (mMbRunningMode != 0u);
+  const bool pendingOn = mMbPowerPending && mMbPowerWantOn;
+  const bool pendingOff = mMbPowerPending && !mMbPowerWantOn;
+  const bool tcBezi = maA0 && lgJeTcProvoz(b2, b3);
 
-  // CHOD jen ze session (HMI/MQTT/plán) — ne z protocení čerpadla (proplach).
-  uiEez.sig_chod = sessionZap && !stopNaSbernici;
+  // CHOD = běžící režim / pending START (ne LG session)
+  uiEez.sig_chod = (runOn || pendingOn) && !pendingOff;
 
+  // b2/b3 = syntetika z Modbus (pump/flow/run, komp, defrost, IBH1)
   uiEez.sig_cerpadlo = maA0 && lgJeCerpadloZap(b2);
   uiEez.sig_kompresor = maA0 && lgJeKompresorBezi(b3);
-  uiEez.sig_el_topeni = maA0 && ((b2 & 0x04) != 0);
+  uiEez.sig_el_topeni = maA0 && lgJeElTopeni(b2);
   uiEez.sig_odmrazovani = maA0 && ((b3 & 0x04) != 0);
   uiEez.sig_tichy_lin = maA0 && lgJeTichyRezimLinAktivni();
 
-  if (!sessionZap || stopNaSbernici) {
+  if (pendingOff || (!runOn && !pendingOn)) {
     uiEez.stav_tc = UI_STAV_VYP;
-  } else if (cekameNaOrigStart && !tcBeziLin) {
-    uiEez.stav_tc = UI_STAV_CEKAM_ORIG;
-  } else if (cekameNaOrigStart) {
+  } else if (pendingOn && !runOn) {
     uiEez.stav_tc = UI_STAV_PRESTART;
-  } else if (maA0 && (tcBeziLin || lgJeCerpadloZap(b2))) {
+  } else if (maA0 && (tcBezi || lgJeCerpadloZap(b2) || runOn)) {
     uiEez.stav_tc = UI_STAV_BEH;
-  } else if (cilovyZapnutoTab5) {
-    uiEez.stav_tc = UI_STAV_PRESTART;
   } else {
     uiEez.stav_tc = UI_STAV_VYP;
   }
@@ -178,7 +192,7 @@ void uiEezSyncFromBus() {
 }
 
 uint32_t uiEezTeplotaVodySetColor(void) {
-  if (uiEez.rezim == UI_REZIM_AUTO || uiEez.sp_pending == 0) {
+  if (uiRezimRegulatorWritesWater(uiEez.rezim) || uiEez.sp_pending == 0) {
     return UI_SP_COLOR_OK;
   }
   if ((millis() - uiEez.sp_pending_ms) >= spPendingWarnMs()) {

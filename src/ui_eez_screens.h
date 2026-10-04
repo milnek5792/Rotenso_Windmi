@@ -18,7 +18,8 @@ enum ScreensEnum {
     SCREEN_ID_REGULATOR = 5,
     SCREEN_ID_BLE_MAC = 6,
     SCREEN_ID_SPOTREBA = 7,
-    _SCREEN_ID_LAST = 7
+    SCREEN_ID_HP_CONFIG = 8,
+    _SCREEN_ID_LAST = 8
 };
 
 typedef struct _objects_t {

@@ -19,7 +19,9 @@ bool s_tcSessionDirty = false;
 bool s_tcSessionOnPending = false;
 uint8_t s_tcSessionSpPending = 35;
 
-constexpr const char* kNs = "lg_therma";
+constexpr const char* kNs = "windmi";
+constexpr const char* kLegacyNs = "lg_therma";
+constexpr const char* kKeyLegacyCleared = "lg_clr";
 constexpr const char* kKeyWifiEn = "wifi_en";
 constexpr const char* kKeyWifiSsid = "wifi_ssid";
 constexpr const char* kKeyWifiPass = "wifi_pass";
@@ -32,7 +34,6 @@ constexpr const char* kKeyUiRezim = "ui_rezim";
 constexpr const char* kKeyTcOn = "tc_on";
 constexpr const char* kKeyTcSp = "tc_sp";
 constexpr const char* kKeyBleRoomMac = "ble_room";
-constexpr const char* kKeyBleOutMac = "ble_out";
 constexpr const char* kKeyEnMeta = "en_meta";
 constexpr const char* kKeyEnPwr0 = "en_p0";
 constexpr const char* kKeyEnPwr1 = "en_p1";
@@ -106,12 +107,33 @@ void migrateRegulatorV4ToV5(const RegulatorConfigV4* old, RegulatorConfig* cfg) 
   cfg->_pad[0] = cfg->_pad[1] = cfg->_pad[2] = 0;
 }
 
+void clearLegacyLgThermaNsOnce() {
+  // Nejdřív otevřít windmi — flag, ať clear neběží při každém storageInit.
+  if (!s_prefs.begin(kNs, false)) {
+    Serial.println("[NVS] begin(windmi) FAIL");
+    return;
+  }
+  s_open = true;
+  if (s_prefs.getBool(kKeyLegacyCleared, false)) {
+    return;
+  }
+
+  Preferences legacy;
+  if (legacy.begin(kLegacyNs, false)) {
+    Serial.println("[NVS] clearing legacy lg_therma (jednou)...");
+    legacy.clear();
+    legacy.end();
+    Serial.println("[NVS] cleared legacy namespace lg_therma");
+  }
+  s_prefs.putBool(kKeyLegacyCleared, true);
+}
+
 void ensureOpen() {
   if (s_open) {
     return;
   }
   if (!s_prefs.begin(kNs, false)) {
-    Serial.println("[NVS] begin(lg_therma) FAIL");
+    Serial.println("[NVS] begin(windmi) FAIL");
     return;
   }
   s_open = true;
@@ -124,6 +146,10 @@ void storageInit() {
     s_nvsMux = xSemaphoreCreateMutex();
   }
   NvsLock lock;
+  if (s_open) {
+    return;
+  }
+  clearLegacyLgThermaNsOnce();
   ensureOpen();
 }
 
@@ -384,7 +410,7 @@ bool storageLoadUiRezim(uint8_t* out) {
     return false;
   }
   const int v = s_prefs.getInt(kKeyUiRezim, 0);
-  if (v != 0 && v != 1) {
+  if (v != 0 && v != 1 && v != 2) {
     return false;
   }
   *out = (uint8_t)v;
@@ -474,36 +500,6 @@ void storageSaveBleRoomMac(const char* mac) {
   s_prefs.putString(kKeyBleRoomMac, mac);
 }
 
-bool storageLoadBleOutdoorMac(char* mac, size_t len) {
-  if (!mac || len < H2_MAC_STR_LEN) {
-    return false;
-  }
-  NvsLock lock;
-  ensureOpen();
-  if (!s_prefs.isKey(kKeyBleOutMac)) {
-    mac[0] = '\0';
-    return false;
-  }
-  String s = s_prefs.getString(kKeyBleOutMac, "");
-  if (s.length() != 17) {
-    mac[0] = '\0';
-    return false;
-  }
-  strncpy(mac, s.c_str(), len - 1);
-  mac[len - 1] = '\0';
-  return true;
-}
-
-void storageSaveBleOutdoorMac(const char* mac) {
-  NvsLock lock;
-  ensureOpen();
-  if (!mac || mac[0] == '\0' || strcmp(mac, "00:00:00:00:00:00") == 0) {
-    s_prefs.remove(kKeyBleOutMac);
-    return;
-  }
-  s_prefs.putString(kKeyBleOutMac, mac);
-}
-
 namespace {
 
 const char* weekPowerKey(int day) {
@@ -539,7 +535,9 @@ void storageSaveEnergyMeta(const void* src, size_t len) {
   }
   NvsLock lock;
   ensureOpen();
-  s_prefs.putBytes(kKeyEnMeta, src, len);
+  if (s_prefs.putBytes(kKeyEnMeta, src, len) != len) {
+    Serial.println("[NVS] en_meta putBytes FAIL");
+  }
 }
 
 bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count) {
@@ -568,6 +566,18 @@ bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count) {
   return any;
 }
 
+static bool putEnergyDay(int d, const uint16_t* daySamples) {
+  const char* key = weekPowerKey(d);
+  const size_t want = 1440 * sizeof(uint16_t);
+  const size_t got = s_prefs.putBytes(key, daySamples, want);
+  if (got != want) {
+    Serial.printf("[NVS] %s putBytes FAIL (%u/%u)\n", key, (unsigned)got,
+                  (unsigned)want);
+    return false;
+  }
+  return true;
+}
+
 void storageSaveEnergyWeekPower(const uint16_t* src, size_t count) {
   if (!src || count < 7 * 1440) {
     return;
@@ -575,8 +585,11 @@ void storageSaveEnergyWeekPower(const uint16_t* src, size_t count) {
   NvsLock lock;
   ensureOpen();
   for (int d = 0; d < 7; ++d) {
-    const char* key = weekPowerKey(d);
-    s_prefs.putBytes(key, src + d * 1440, 1440 * sizeof(uint16_t));
+    if (!putEnergyDay(d, src + d * 1440)) {
+      // Další dny by jen plnily log / flash — skonči.
+      break;
+    }
+    delay(1);
   }
 }
 
@@ -586,7 +599,7 @@ void storageSaveEnergyWeekPowerDay(int dayIndex, const uint16_t* daySamples) {
   }
   NvsLock lock;
   ensureOpen();
-  s_prefs.putBytes(weekPowerKey(dayIndex), daySamples, 1440 * sizeof(uint16_t));
+  (void)putEnergyDay(dayIndex, daySamples);
 }
 
 void storageClearEnergyHistory(void) {

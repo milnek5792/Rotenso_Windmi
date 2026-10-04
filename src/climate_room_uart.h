@@ -35,7 +35,6 @@ void climateRoomRequestNow(void);
 void climateRoomStartScan(void);
 bool climateRoomSelectMeter(uint8_t index1);
 bool climateRoomSetRoomMac(const char* mac);
-bool climateRoomSetOutdoorMac(const char* mac);
 bool climateRoomPushConfig(void);
 
 bool climateRoomIsOk(void);
@@ -46,21 +45,13 @@ bool climateRoomBootPollPending(void);
 int climateRoomFoundCount(void);
 bool climateRoomGetFound(uint8_t index1, ClimateRoomFound* out);
 void climateRoomGetConfiguredMac(char* buf, size_t len);
-void climateRoomGetConfiguredOutdoorMac(char* buf, size_t len);
 
 float climateRoomTempC(void);
 float climateRoomHumidity(void);
 int climateRoomBatteryPct(void);
 int climateRoomRssi(void);
 
-bool climateRoomOutdoorIsOk(void);
-float climateRoomOutdoorTempC(void);
-float climateRoomOutdoorHumidity(void);
-int climateRoomOutdoorBatteryPct(void);
-int climateRoomOutdoorRssi(void);
-
 void climateRoomGetLastRoomResponse(char* buf, size_t len);
-void climateRoomGetLastOutdoorResponse(char* buf, size_t len);
 
 /** OTA bridge: Tab5 pošle Wi‑Fi creds přes UART, bridge spustí ArduinoOTA. */
 typedef enum {

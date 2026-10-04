@@ -127,6 +127,11 @@ void action_akce_settings_spotreba(lv_event_t* e) {
   enqueue(UI_AKCE_SETTINGS_SPOTREBA);
 }
 
+void action_akce_settings_hp_config(lv_event_t* e) {
+  (void)e;
+  enqueue(UI_AKCE_SETTINGS_HP_CONFIG);
+}
+
 void action_akce_plan_back(lv_event_t* e) {
   (void)e;
   enqueue(UI_AKCE_PLAN_BACK);

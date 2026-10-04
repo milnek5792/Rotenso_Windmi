@@ -69,9 +69,13 @@ static void uiSettingsSyncNet() {
 }
 
 void uiBindingRezimPrepnout() {
-  uiEez.rezim = (uiEez.rezim == UI_REZIM_AUTO)
-      ? UI_REZIM_VYSTUPNI_TEPLOTA
-      : UI_REZIM_AUTO;
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    uiEez.rezim = UI_REZIM_EKVITERM;
+  } else if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    uiEez.rezim = UI_REZIM_VYSTUPNI_TEPLOTA;
+  } else {
+    uiEez.rezim = UI_REZIM_AUTO;
+  }
   ulozenyRezim = uiEez.rezim;
 }
 

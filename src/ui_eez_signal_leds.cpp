@@ -3,6 +3,7 @@
 #include "ui_eez_model.h"
 #include "ui_eez_screens.h"
 #include "ui_eez_fonts.h"
+#include "ui_eez_status_bar.h"
 #include "climate_regulator.h"
 #include "lg_lvgl.h"
 
@@ -13,6 +14,7 @@ namespace {
 
 constexpr int kLedSize = 18;
 constexpr uint32_t kOnGreen = 0x30D158u;
+constexpr uint32_t kOffBorderGreen = 0x145C2Eu;  // výrazně tmavší rámeček START off
 constexpr uint32_t kOffColor = 0xAEAEB2u;
 constexpr uint32_t kOnOrange = 0xFF9F0Au;
 constexpr uint32_t kOnPurple = 0xBF5AF2u;
@@ -21,9 +23,9 @@ constexpr uint32_t kMuted = 0x8E8E93u;
 constexpr uint32_t kBtnBg = 0x1A1A1Fu;
 constexpr uint32_t kBtnBgOn = 0x14301Cu;
 
-// Vedle MQTT (~720) — watch z mobilu
-constexpr int kEyeX = 950;
-constexpr int kEyeY = 14;
+// Vedle MQTT — watch z mobilu
+constexpr int kEyeX = UI_STATUS_EYE_X;
+constexpr int kEyeY = UI_STATUS_EYE_Y;
 // Úplně vpravo v horním řádku — MAN / PID / EKV
 constexpr int kRegRightPad = 12;
 constexpr int kRegY = 15;
@@ -105,7 +107,7 @@ static void applyStartButton(bool on) {
 
   lv_obj_set_style_bg_color(btn, lv_color_hex(on ? kBtnBgOn : kBtnBg),
                             LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_border_color(btn, lv_color_hex(kOnGreen),
+  lv_obj_set_style_border_color(btn, lv_color_hex(on ? kOnGreen : kOffBorderGreen),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_border_width(btn, on ? 3 : 2, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_border_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -145,6 +147,9 @@ static void applyEye(bool watching) {
 }
 
 static RegStatusKind currentRegStatus(void) {
+  if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    return kRegEkv;
+  }
   if (uiEez.rezim != UI_REZIM_AUTO) {
     return kRegMan;
   }
@@ -175,29 +180,37 @@ static void applyRegStatus(void) {
   }
   const RegStatusKind kind = currentRegStatus();
   int eqBaseC = 0;
+  int offsetC = 0;
   if (kind == kRegEkv) {
     RegulatorSnapshot snap{};
     climateRegulatorGetSnapshot(&snap);
     eqBaseC = (int)lroundf(snap.eq_base_c);
+    offsetC = (int)lroundf(climateRegulatorGetConfig()->offset_c);
   }
 
   static int8_t s_last = -1;
   static int s_lastEq = -999;
+  static int s_lastOff = -999;
   if (s_last == (int8_t)kind &&
-      (kind != kRegEkv || s_lastEq == eqBaseC)) {
+      (kind != kRegEkv || (s_lastEq == eqBaseC && s_lastOff == offsetC))) {
     return;
   }
   s_last = (int8_t)kind;
   s_lastEq = eqBaseC;
+  s_lastOff = offsetC;
 
-  char buf[16];
+  char buf[20];
   const char* text = "MAN";
   uint32_t col = kMuted;
   if (kind == kRegPid) {
     text = "PID";
     col = kOnGreen;
   } else if (kind == kRegEkv) {
-    snprintf(buf, sizeof(buf), "EKV %d", eqBaseC);
+    if (uiEez.rezim == UI_REZIM_EKVITERM) {
+      snprintf(buf, sizeof(buf), "EKV%+d", offsetC);
+    } else {
+      snprintf(buf, sizeof(buf), "EKV %d", eqBaseC);
+    }
     text = buf;
     col = kOnBlue;
   }

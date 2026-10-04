@@ -20,3 +20,6 @@ include/mqtt_config.h
 *.jpeg
 *.jpg
 WhatsApp*
+
+# Dočasný výpis z PDF manuálu (necommitovat)
+docs/_modbus_extract.txt

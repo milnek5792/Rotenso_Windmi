@@ -46,11 +46,9 @@ void storageSaveTcSession(bool on, uint8_t spC);
 void storageRequestSaveTcSession(bool on, uint8_t spC);
 void storageFlushTcSessionPending(void);
 
-/** SwitchBot MAC pro H2 bridge (pokoj / venku). Prázdný = neuloženo. */
+/** SwitchBot MAC pro H2 bridge (pokoj). Prázdný = neuloženo. */
 bool storageLoadBleRoomMac(char* mac, size_t len);
 void storageSaveBleRoomMac(const char* mac);
-bool storageLoadBleOutdoorMac(char* mac, size_t len);
-void storageSaveBleOutdoorMac(const char* mac);
 
 /** Blob meta spotřeby (climate_energy EnergyMeta). */
 bool storageLoadEnergyMeta(void* dst, size_t len);

@@ -1,4 +1,4 @@
-// ble_config.h — SwitchBot Meter (pokoj + venkovní, Wi‑Fi↔BLE na ESP32-S3 7B)
+// ble_config.h — SwitchBot Meter (pokoj, Wi‑Fi↔BLE na ESP32-S3 7B)
 #ifndef BLE_CONFIG_H
 #define BLE_CONFIG_H
 
@@ -9,11 +9,6 @@
 // Pokojový SwitchBot Meter
 #ifndef BLE_METER_MAC
 #define BLE_METER_MAC "EC:6F:03:86:1E:6B"
-#endif
-
-// Venkovní SwitchBot Meter
-#ifndef BLE_OUTDOOR_MAC
-#define BLE_OUTDOOR_MAC "E8:76:C3:46:66:14"
 #endif
 
 // 0 = jen nakonfigurované MAC (produkce); 1 = první SwitchBot s T (diag)
@@ -30,7 +25,7 @@
 #define BLE_FAIL_RETRY_MS 20000u
 #endif
 
-// Meter vysílá 1–4 s — 10 s scan stačí (oba senzory v jednom cyklu)
+// Meter vysílá 1–4 s — 10 s scan stačí
 #ifndef BLE_SCAN_MS
 #define BLE_SCAN_MS 10000
 #endif

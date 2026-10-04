@@ -141,36 +141,28 @@ void onFieldFocus(lv_event_t* e) {
 }  // namespace
 
 bool uiBleMacFormSave(void) {
-  if (!bleMacFormObj.ta_room || !bleMacFormObj.ta_out) {
+  if (!bleMacFormObj.ta_room) {
     return false;
   }
   char room[H2_MAC_STR_LEN];
-  char out[H2_MAC_STR_LEN];
   const char* roomText = lv_textarea_get_text(bleMacFormObj.ta_room);
-  const char* outText = lv_textarea_get_text(bleMacFormObj.ta_out);
   strncpy(room, roomText ? roomText : "", sizeof(room) - 1);
   room[sizeof(room) - 1] = '\0';
-  strncpy(out, outText ? outText : "", sizeof(out) - 1);
-  out[sizeof(out) - 1] = '\0';
   normalizeMac(room, sizeof(room));
-  normalizeMac(out, sizeof(out));
 
-  if (!validMac(room) || !validMac(out)) {
+  if (!validMac(room)) {
     setHint("MAC musí mít tvar AA:BB:CC:DD:EE:FF", kColOrange);
     return false;
   }
 
   lv_textarea_set_text(bleMacFormObj.ta_room, room);
-  lv_textarea_set_text(bleMacFormObj.ta_out, out);
 
-  const bool okRoom = climateRoomSetRoomMac(room);
-  const bool okOut = climateRoomSetOutdoorMac(out);
-  if (!okRoom || !okOut) {
+  if (!climateRoomSetRoomMac(room)) {
     setHint("Uložení MAC selhalo", kColOrange);
     return false;
   }
   setHint("MAC uloženo - posílám na H2", kColGreen);
-  Serial.printf("[ROOM] MAC form room=%s out=%s\n", room, out);
+  Serial.printf("[ROOM] MAC form room=%s\n", room);
   return true;
 }
 
@@ -186,7 +178,7 @@ void uiBleMacFormCreate(void) {
       scr, 40, 16, 220, 52, "<- ZPĚT", onBack, 0x48484Fu);
 
   bleMacFormObj.lbl_title = lv_label_create(scr);
-  lv_label_set_text(bleMacFormObj.lbl_title, "SwitchBot MAC");
+  lv_label_set_text(bleMacFormObj.lbl_title, "SwitchBot MAC (pokoj)");
   lv_obj_set_style_text_font(bleMacFormObj.lbl_title, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(bleMacFormObj.lbl_title, lv_color_hex(kColText),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -201,17 +193,9 @@ void uiBleMacFormCreate(void) {
   lv_textarea_set_max_length(bleMacFormObj.ta_room, 17);
   styleField(bleMacFormObj.ta_room);
 
-  bleMacFormObj.lbl_out = makeLabel(scr, 40, 184, "Venkovní teploměr (MAC)", kColMuted);
-  bleMacFormObj.ta_out = lv_textarea_create(scr);
-  lv_obj_set_pos(bleMacFormObj.ta_out, 40, 216);
-  lv_obj_set_size(bleMacFormObj.ta_out, 1200, 52);
-  lv_textarea_set_one_line(bleMacFormObj.ta_out, true);
-  lv_textarea_set_max_length(bleMacFormObj.ta_out, 17);
-  styleField(bleMacFormObj.ta_out);
-
   bleMacFormObj.btn_save = makeActionButton(
-      scr, 40, 288, 300, 52, "Uložit", onSave, kColGreen);
-  bleMacFormObj.lbl_hint = makeLabel(scr, 360, 300, "Formát AA:BB:CC:DD:EE:FF", kColMuted);
+      scr, 40, 200, 300, 52, "Uložit", onSave, kColGreen);
+  bleMacFormObj.lbl_hint = makeLabel(scr, 360, 212, "Formát AA:BB:CC:DD:EE:FF", kColMuted);
 
   bleMacFormObj.keyboard = lv_keyboard_create(scr);
   lv_obj_set_size(bleMacFormObj.keyboard, 1280, 360);
@@ -228,30 +212,20 @@ void uiBleMacFormCreate(void) {
                       bleMacFormObj.keyboard);
   lv_obj_add_event_cb(bleMacFormObj.ta_room, onFieldFocus, LV_EVENT_CLICKED,
                       bleMacFormObj.keyboard);
-  lv_obj_add_event_cb(bleMacFormObj.ta_out, onFieldFocus, LV_EVENT_FOCUSED,
-                      bleMacFormObj.keyboard);
-  lv_obj_add_event_cb(bleMacFormObj.ta_out, onFieldFocus, LV_EVENT_CLICKED,
-                      bleMacFormObj.keyboard);
 
   uiBleMacFormPrepare();
 }
 
 void uiBleMacFormPrepare(void) {
-  if (!bleMacFormObj.ta_room || !bleMacFormObj.ta_out) {
+  if (!bleMacFormObj.ta_room) {
     return;
   }
   char room[H2_MAC_STR_LEN];
-  char out[H2_MAC_STR_LEN];
   climateRoomGetConfiguredMac(room, sizeof(room));
-  climateRoomGetConfiguredOutdoorMac(out, sizeof(out));
   if (strcmp(room, "---") == 0 || strcmp(room, "—") == 0) {
     room[0] = '\0';
   }
-  if (strcmp(out, "---") == 0 || strcmp(out, "—") == 0) {
-    out[0] = '\0';
-  }
   lv_textarea_set_text(bleMacFormObj.ta_room, room);
-  lv_textarea_set_text(bleMacFormObj.ta_out, out);
   setHint("Formát AA:BB:CC:DD:EE:FF", kColMuted);
   if (bleMacFormObj.keyboard) {
     lv_keyboard_set_textarea(bleMacFormObj.keyboard, bleMacFormObj.ta_room);

@@ -25,13 +25,7 @@ float climateBleHumidity(void);
 int climateBleBatteryPct(void);
 int climateBleRssi(void);
 
-bool climateBleOutdoorIsOk(void);
-float climateBleOutdoorTempC(void);
-float climateBleOutdoorHumidity(void);
-int climateBleOutdoorBatteryPct(void);
-int climateBleOutdoorRssi(void);
-
-/** Stavový řádek pro UI (Nastaveni) — pokoj + venkovní. */
+/** Stavový řádek pro UI (Nastaveni) — pokojový SwitchBot. */
 void climateBleStatusText(char* buf, size_t buflen);
 
 #ifdef __cplusplus

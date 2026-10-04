@@ -13,8 +13,6 @@ typedef struct {
   lv_obj_t* lbl_title;
   lv_obj_t* lbl_room;
   lv_obj_t* ta_room;
-  lv_obj_t* lbl_out;
-  lv_obj_t* ta_out;
   lv_obj_t* btn_save;
   lv_obj_t* lbl_hint;
   lv_obj_t* keyboard;

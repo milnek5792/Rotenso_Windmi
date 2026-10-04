@@ -7,8 +7,10 @@
 
 #include "app_version.h"
 #include "bus_lg_config.h"
+#include "bus_rotenso_config.h"
 #include "src/bus_lg_model.h"
 #include "src/bus_lg_lin_api.h"
+#include "src/bus/bus_rotenso_modbus.h"
 #include "bus_lg_task.h"
 #include "ui_task_ui.h"
 #include "app_cmd.h"
@@ -56,13 +58,23 @@ void setup() {
   appCmdInit();
 
   Serial.println();
-  Serial.printf("=== LG THERMA Tab5 FW %s ===\n", APP_FW_VERSION);
-  Serial.println(" LG THERMA — PlatformIO / pioarduino");
-  Serial.println(" Board: M5Stack Tab5 + H2 UART");
+  Serial.printf("=== Rotenso Windmi Tab5 FW %s ===\n", APP_FW_VERSION);
+  Serial.println(" Modbus RTU — RS485 Tab5 (teploty + live)");
+  Serial.printf(" RS485 RX=%d TX=%d DIR=%d | slave=%u regs=0x%04X..+%u\n",
+                WINDMI_RS485_RX_PIN, WINDMI_RS485_TX_PIN, WINDMI_RS485_DIR_PIN,
+                (unsigned)WINDMI_MB_SLAVE, (unsigned)WINDMI_REG_TEMP_BASE,
+                (unsigned)WINDMI_REG_TEMP_COUNT);
   Serial.println("==================================================\n");
 
   lgModelInit();
   lgModelRestoreSessionFromNvs();
+
+  // Modbus hned — nesmí čekat na LVGL (dřív až po UI = zbytečná latence teplot).
+#if LG_LIN_DEDICATED_TASK
+  lgBusStartTask();
+#else
+  rotensoBusInit();
+#endif
 
 #if LG_USE_EEZ_LVGL
   uiTouchTab5Init();
@@ -83,13 +95,7 @@ void setup() {
   uiNetInit();
   uiNetStartTask();
 
-#if LG_LIN_DEDICATED_TASK
-  lgBusStartTask();
-#else
-  lgBusInit();
-#endif
-
-  Serial.println("[setup] done — LIN task + net task + loop(ctrl/touch)");
+  Serial.println("[setup] done — Modbus task + net task + loop(ctrl/touch)");
 }
 
 void loop() {
@@ -98,7 +104,7 @@ void loop() {
   M5.update();
 #endif
 
-  if (lgBusIsReady()) {
+  if (rotensoBusIsReady() || lgBusIsReady()) {
     uiBusBindingsTick();
     uiBusFlushDeferredStorage();
   } else {

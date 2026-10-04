@@ -210,6 +210,9 @@ void appCmdDrainUi(void) {
       case UI_AKCE_SETTINGS_SPOTREBA:
         uiNavigateTo(SCREEN_ID_SPOTREBA);
         break;
+      case UI_AKCE_SETTINGS_HP_CONFIG:
+        uiNavigateTo(SCREEN_ID_HP_CONFIG);
+        break;
       case UI_AKCE_PLAN_BACK:
         uiNavigateTo(SCREEN_ID_SETTINGS);
         break;

@@ -59,6 +59,7 @@ uint32_t s_lastPowerSaveMs = 0;
 bool s_metaDirty = false;
 bool s_powerDirty = false;
 bool s_weekFullDirty = false;
+int s_weekSaveDay = 0;
 
 int ymdFromTm(const struct tm& t) {
   return (t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday;
@@ -208,15 +209,24 @@ void persistIfNeeded(bool force) {
 
   if (s_powerDirty && s_weekPower && powerDue) {
     if (s_weekFullDirty || force) {
-      storageSaveEnergyWeekPower(s_weekPower,
-                                 ENERGY_WEEK_DAYS * ENERGY_MINUTES_PER_DAY);
-      s_weekFullDirty = false;
+      // Po jednom dni na tick — 7× putBytes (~20 kB) najednou shazovalo UI/Wi‑Fi.
+      const int d = (s_weekSaveDay >= 0 && s_weekSaveDay < ENERGY_WEEK_DAYS)
+                        ? s_weekSaveDay
+                        : 0;
+      storageSaveEnergyWeekPowerDay(d, &s_weekPower[d * ENERGY_MINUTES_PER_DAY]);
+      s_weekSaveDay = d + 1;
+      if (s_weekSaveDay >= ENERGY_WEEK_DAYS) {
+        s_weekSaveDay = 0;
+        s_weekFullDirty = false;
+        s_powerDirty = false;
+        s_lastPowerSaveMs = now;
+      }
     } else {
-      // Běžný minutový vzorek: jen dnešek — 7× putBytes shazovalo panel (~1×/min).
+      // Běžný minutový vzorek: jen dnešek.
       storageSaveEnergyWeekPowerDay(0, &s_weekPower[0]);
+      s_powerDirty = false;
+      s_lastPowerSaveMs = now;
     }
-    s_powerDirty = false;
-    s_lastPowerSaveMs = now;
   }
 }
 
@@ -311,6 +321,7 @@ void climateEnergyClearHistory(void) {
   s_metaDirty = false;
   s_powerDirty = false;
   s_weekFullDirty = false;
+  s_weekSaveDay = 0;
   s_histGen++;
   Serial.println("[ENERGY] history cleared (RAM+NVS)");
 }

@@ -81,7 +81,7 @@ void ulozZakladniStav() {
 }
 
 void obnovZakladniStav() {
-  if (uiEez.rezim == UI_REZIM_AUTO) {
+  if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
     climateRegulatorSetPlanRoomOffset(0.0f);
     climateRegulatorSetPlanStop(false);
     // Session HOLD z plánu VYP = pořád START → obnov provoz
@@ -99,7 +99,7 @@ void obnovZakladniStav() {
 void aplikujAkci(PlanAkce akce, uint8_t utlumStupne) {
   const bool maBezdet = s_zakladniZapnuto || uiBusSessionIsOn();
 
-  if (uiEez.rezim == UI_REZIM_AUTO) {
+  if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
     switch (akce) {
       case PLAN_AKCE_VYP:
         climateRegulatorSetPlanStop(true);
@@ -108,8 +108,8 @@ void aplikujAkci(PlanAkce akce, uint8_t utlumStupne) {
         break;
       case PLAN_AKCE_UTLUM:
         climateRegulatorSetPlanStop(false);
+        // Pokoj: offset SP pokoje; ekvitermá: offset SP vody
         climateRegulatorSetPlanRoomOffset(-(float)utlumStupne);
-        // Útlum = snížený pokojový SP; TČ nechat/obnovit v chodu jen pokud bylo zap.
         if (maBezdet) {
           if (!uiBusSessionIsOn()) {
             uiBusPlanApplyStart();
@@ -154,24 +154,39 @@ void aplikujAkci(PlanAkce akce, uint8_t utlumStupne) {
 
 void aktualizujMonitoring(int aktivniObdobi, PlanAkce akce, uint8_t utlumStupne) {
   if (!g_planConfig.aktivni) {
+    uiEez.sig_utlum = false;
     snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "PLÁN VYPNUTÝ");
     snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "Časový plán je neaktivní");
     return;
   }
 
+  if (!uiEez.cas_platny) {
+    uiEez.sig_utlum = false;
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "PLÁN ČEKÁ NA ČAS");
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text),
+             "NTP/čas není platný — plán neběží");
+    return;
+  }
+
   if (aktivniObdobi < 0) {
+    uiEez.sig_utlum = false;
     snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TÝDENNÍ PLÁN AKTIVNÍ");
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "Běžný režim - mimo plánovaná období");
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text),
+             "Běžný režim - mimo plánovaná období");
     return;
   }
 
   const char* obNazev = climatePlanObdobiNazev(static_cast<uint8_t>(aktivniObdobi));
+  const char* utlumCil =
+      (uiEez.rezim == UI_REZIM_AUTO)       ? "pokoj"
+      : (uiEez.rezim == UI_REZIM_EKVITERM) ? "voda"
+                                           : "voda";
 
   if (akce == PLAN_AKCE_UTLUM) {
     snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "ÚTLUM AKTIVNÍ");
     uiEez.sig_utlum = true;
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: útlum -%u st",
-             obNazev, (unsigned)utlumStupne);
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: útlum %s -%u C",
+             obNazev, utlumCil, (unsigned)utlumStupne);
   } else if (akce == PLAN_AKCE_VYP) {
     snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TOPENÍ VYPNUTO");
     uiEez.sig_utlum = false;
@@ -315,10 +330,7 @@ void climatePlanTick(void) {
   const uint32_t nowMs = millis();
 
   if (!g_planConfig.aktivni || !uiEez.cas_platny) {
-    if (uiEez.rezim == UI_REZIM_AUTO) {
-      climateRegulatorSetPlanRoomOffset(0.0f);
-      climateRegulatorSetPlanStop(false);
-    }
+    // Jen při odchodu z řízení plánem — ne každý tick (jinak reset PI periody).
     if (s_planOvlada) {
       obnovZakladniStav();
       s_planOvlada = false;
@@ -357,8 +369,16 @@ void climatePlanTick(void) {
     cilovyUtlum = bunka->utlum_stupne;
   }
 
-  if (obdobi != s_aplikovaneObdobi || cilovaAkce != s_aplikovanaAkce ||
-      cilovyUtlum != s_aplikovanyUtlum) {
+  // Po změně režimu (pokoj/ekviterm/ruční) znovu aplikuj stejnou buňku.
+  static uint8_t s_lastRezim = 0xFFu;
+  const uint8_t rezimNow = (uint8_t)uiEez.rezim;
+  const bool rezimZmena = (s_lastRezim != rezimNow);
+  if (rezimZmena) {
+    s_lastRezim = rezimNow;
+  }
+
+  if (rezimZmena || obdobi != s_aplikovaneObdobi ||
+      cilovaAkce != s_aplikovanaAkce || cilovyUtlum != s_aplikovanyUtlum) {
     if (obdobi < 0) {
       if (s_planOvlada) {
         obnovZakladniStav();

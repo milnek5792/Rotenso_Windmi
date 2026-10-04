@@ -21,12 +21,6 @@ float climateRoomHumidity(void) { return climateBleHumidity(); }
 int climateRoomBatteryPct(void) { return climateBleBatteryPct(); }
 int climateRoomRssi(void) { return climateBleRssi(); }
 
-bool climateRoomOutdoorIsOk(void) { return climateBleOutdoorIsOk(); }
-float climateRoomOutdoorTempC(void) { return climateBleOutdoorTempC(); }
-float climateRoomOutdoorHumidity(void) { return climateBleOutdoorHumidity(); }
-int climateRoomOutdoorBatteryPct(void) { return climateBleOutdoorBatteryPct(); }
-int climateRoomOutdoorRssi(void) { return climateBleOutdoorRssi(); }
-
 void climateRoomStatusText(char* buf, size_t buflen) {
   climateBleStatusText(buf, buflen);
 }

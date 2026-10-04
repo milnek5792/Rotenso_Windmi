@@ -37,9 +37,7 @@ typedef struct {
   lv_obj_t* lbl_sys_title;
   lv_obj_t* lbl_sys_hint;
   lv_obj_t* lbl_mac_room;
-  lv_obj_t* lbl_mac_out;
   lv_obj_t* lbl_rsp_room;
-  lv_obj_t* lbl_rsp_out;
   lv_obj_t* btn_ble;
   lv_obj_t* btn_mac;
   lv_obj_t* btn_bridge;
@@ -49,6 +47,7 @@ typedef struct {
   lv_obj_t* btn_plan;
   lv_obj_t* btn_servis;
   lv_obj_t* btn_spotreba;
+  lv_obj_t* btn_hp_config;
 } settings_objects_t;
 
 extern settings_objects_t settingsObj;

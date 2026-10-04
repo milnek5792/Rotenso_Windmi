@@ -262,9 +262,9 @@ Mapovat registry → stejné UI pojmy: START/STOP, SP vody, T in/out, provoz, č
 
 ### První milníky nového repa
 
-1. Import baseline z LG Therma + tento dokument.  
-2. Vestavěný RS485 Tab5 + Modbus RTU poll (read-only stav).  
-3. Zápis START/STOP + SP vody.  
-4. Napojení regulátoru / plánu.  
-5. C3/BLE + energie (nebo plán B bez C3).  
+1. Import baseline z LG Therma + tento dokument. — **hotovo**
+2. Vestavěný RS485 Tab5 + Modbus RTU poll (read-only stav). — **hotovo**: poll `0001…0004` (Tout/Tin_HP/Tw_in/T1), live → `lgMaCerstoA0` / porucha / MQTT `tele/lin`; UI vstup/výstup + venkovní z TC.
+3. Zápis START/STOP + SP vody.
+4. Napojení regulátoru / plánu.
+5. C3/BLE + energie (nebo plán B bez C3).
 6. Ověření proti reálné jednotce Windmi.

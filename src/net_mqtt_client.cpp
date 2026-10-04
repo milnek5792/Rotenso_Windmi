@@ -277,6 +277,12 @@ void snapMqttSetpoint(float* setp) {
     *setp = (roomSp >= 16.0f && roomSp <= 24.0f) ? roomSp : UI_TEPLOTA_NEPLATNA;
     return;
   }
+  if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    RegulatorSnapshot snap{};
+    climateRegulatorGetSnapshot(&snap);
+    *setp = snap.t_water_sp_c;
+    return;
+  }
   lgModelLock();
   const uint8_t cil = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
   lgModelUnlock();
@@ -286,17 +292,21 @@ void snapMqttSetpoint(float* setp) {
 void snapLinTemps(float* inlet, float* outlet, float* outdoor, float* setp) {
   lgModelLock();
   const bool maA0 = lgMaCerstoA0();
-  const uint8_t in = mVstupni;
-  const uint8_t out = mVystupni;
+  const bool waterOk = mVodaOk;
+  const float inC = mVstupniC;
+  const float outC = mVystupniC;
+  const bool outOk = mVenkovniOk;
+  const float venkC = mVenkovniC;
   lgModelUnlock();
   if (inlet) {
-    *inlet = linTempOrNa(in, maA0);
+    *inlet = (maA0 && waterOk && !isnan(inC)) ? inC : UI_TEPLOTA_NEPLATNA;
   }
   if (outlet) {
-    *outlet = linTempOrNa(out, maA0);
+    *outlet = (maA0 && waterOk && !isnan(outC)) ? outC : UI_TEPLOTA_NEPLATNA;
   }
   if (outdoor) {
-    *outdoor = uiEez.teplota_venkovni;
+    // Jen Modbus TČ — ne BLE fallback.
+    *outdoor = (maA0 && outOk && !isnan(venkC)) ? venkC : UI_TEPLOTA_NEPLATNA;
   }
   if (setp) {
     snapMqttSetpoint(setp);
@@ -432,11 +442,23 @@ bool nearlyEq(float a, float b) {
 }
 
 int8_t mqttRegModeCode(void) {
-  return (uiEez.rezim == UI_REZIM_AUTO) ? 1 : 0;
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    return 1;
+  }
+  if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    return 2;
+  }
+  return 0;
 }
 
 const char* mqttRegModePayload(void) {
-  return (uiEez.rezim == UI_REZIM_AUTO) ? "room" : "water";
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    return "room";
+  }
+  if (uiEez.rezim == UI_REZIM_EKVITERM) {
+    return "equitherm";
+  }
+  return "water";
 }
 
 void publishRegMode(void) {
@@ -773,6 +795,7 @@ void handleIncoming(const char* topic, int topicLen, const char* data, int dataL
 
   if (topicIs(topic, topicLen, MQTT_TOPIC_CMD_SETPOINT)) {
     const bool autoMode = (uiEez.rezim == UI_REZIM_AUTO);
+    const bool ekvMode = (uiEez.rezim == UI_REZIM_EKVITERM);
     if (strcasecmp(msg, "up") == 0 || strcmp(msg, "+") == 0) {
       uiBusQueueAdjustSetpoint(autoMode ? 5 : 1);
       return;
@@ -803,6 +826,11 @@ void handleIncoming(const char* topic, int topicLen, const char* data, int dataL
     if (autoMode) {
       if (spf >= 18.0f && spf <= 24.0f) {
         appCmdEnqueueSetpointAbs((int)lroundf(spf * 10.0f), UI_SP_SRC_MQTT);
+      }
+    } else if (ekvMode) {
+      const int sp = (int)(spf + 0.5f);
+      if (sp >= REG_T_WATER_MIN_C && sp <= REG_T_WATER_MAX_C) {
+        appCmdEnqueueSetpointAbs(sp, UI_SP_SRC_MQTT);
       }
     } else {
       const int sp = (int)(spf + 0.5f);

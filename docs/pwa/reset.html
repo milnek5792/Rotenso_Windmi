@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#121214">
-  <title>Windmi — reset instalace</title>
+  <title>Windmi — reset service worker</title>
   <style>
     body {
       margin: 0;
@@ -42,10 +42,10 @@
 </head>
 <body>
   <div>
-    <h1>Reset Windmi PWA</h1>
-    <p>Smaže service workery a cache tohoto webu v prohlížeči. Neodinstaluje systémovou aplikaci WebAPK — tu smaž v Nastavení → Aplikace → Windmi.</p>
+    <h1>Reset service worker</h1>
+    <p>Smaže SW a cache webu Windmi v tomto prohlížeči — stejně jako minule, když to pomohlo.</p>
     <button type="button" id="btn-reset">Vymazat SW + cache</button>
-    <a class="btn secondary" href="./">Zpět do aplikace</a>
+    <a class="btn secondary" href="./">Otevřít Windmi</a>
     <div id="log"></div>
   </div>
   <script>
@@ -53,11 +53,14 @@
     function log(msg) {
       logEl.textContent += msg + '\n';
     }
-    document.getElementById('btn-reset').addEventListener('click', async () => {
+    async function wipe() {
       logEl.textContent = '';
       try {
         if ('serviceWorker' in navigator) {
           const regs = await navigator.serviceWorker.getRegistrations();
+          if (!regs.length) {
+            log('Žádný service worker');
+          }
           for (const reg of regs) {
             const ok = await reg.unregister();
             log('SW unregister: ' + (reg.scope || '?') + ' → ' + ok);
@@ -77,11 +80,15 @@
         } catch (e) {
           log('storage: ' + e);
         }
-        log('Hotovo. Zavři všechny karty github.io, pak otevři znovu ./');
+        log('Hotovo. Zavři Chrome úplně (odebrat z recent) a otevři Windmi znovu.');
       } catch (e) {
         log('Chyba: ' + e);
       }
-    });
+    }
+    document.getElementById('btn-reset').addEventListener('click', wipe);
+    if (new URLSearchParams(location.search).has('auto')) {
+      wipe();
+    }
   </script>
 </body>
 </html>

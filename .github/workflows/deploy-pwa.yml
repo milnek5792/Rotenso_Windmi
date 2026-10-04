@@ -1,4 +1,4 @@
-# Nasadí docs/pwa na GitHub Pages pod /w2/ (nová instalční identita).
+# Nasadí docs/pwa na GitHub Pages. /x/ = čistá stránka pro odinstalaci/cache.
 name: Deploy PWA
 
 on:
@@ -35,8 +35,81 @@ jobs:
 
       - name: Build site root
         run: |
-          mkdir -p _site/w2
+          mkdir -p _site/w2 _site/x
           cp -a docs/pwa/. _site/w2/
+
+          cat > _site/x/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="cs">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Windmi — prohlížeč</title>
+            <meta name="theme-color" content="#121214">
+            <!-- Žádný manifest = Chrome by to neměl brát jako nainstalovanou app -->
+            <style>
+              body{margin:0;min-height:100dvh;background:#121214;color:#e0e0e6;font-family:system-ui,sans-serif;padding:24px;line-height:1.45}
+              code,kbd{color:#64d2ff}
+              button,.btn{display:inline-block;margin:8px 8px 0 0;padding:12px 16px;border:0;border-radius:10px;background:#0a84ff;color:#fff;font-weight:700;text-decoration:none}
+              .btn2{background:#2c2c2e}
+              #mode{padding:10px 12px;border-radius:8px;background:#1a1a1f;border:1px solid #24242b;margin:12px 0}
+              #log{margin-top:16px;color:#8e8e93;font-size:.85rem;white-space:pre-wrap}
+              .ok{color:#30d158}.bad{color:#ff453a}
+            </style>
+          </head>
+          <body>
+            <h1>Kontrola instalace</h1>
+            <div id="mode">Zjišťuji…</div>
+            <p>Když je režim <b>standalone</b>, Chrome spouští starou nainstalovanou PWA (i když ji v Aplikacích nevidíš). Bývá v <code>chrome://apps</code>.</p>
+            <ol>
+              <li>Do adresního řádku Chrome napiš <kbd>chrome://apps</kbd> a odstraň Windmi.</li>
+              <li>Nebo: Chrome → ⋮ → Nastavení → Aplikace.</li>
+              <li>Pak klepni níž na vymazání cache.</li>
+            </ol>
+            <button type="button" id="wipe">Vymazat SW + cache tohoto webu</button>
+            <a class="btn btn2" id="open" href="../w2/">Otevřít Windmi v prohlížeči</a>
+            <div id="log"></div>
+            <script>
+              const mode = window.matchMedia('(display-mode: standalone)').matches
+                || window.matchMedia('(display-mode: fullscreen)').matches
+                || window.navigator.standalone === true;
+              const el = document.getElementById('mode');
+              el.innerHTML = mode
+                ? '<span class="bad">Režim: STANDALONE (otevřeno jako aplikace)</span>'
+                : '<span class="ok">Režim: prohlížeč (je vidět adresní řádek Chrome)</span>';
+              if (mode) {
+                document.getElementById('open').style.display = 'none';
+              }
+              document.getElementById('wipe').onclick = async () => {
+                const log = document.getElementById('log');
+                const lines = [];
+                const say = (m) => { lines.push(m); log.textContent = lines.join('\n'); };
+                try {
+                  if ('serviceWorker' in navigator) {
+                    for (const r of await navigator.serviceWorker.getRegistrations()) {
+                      await r.unregister();
+                      say('SW off: ' + r.scope);
+                    }
+                  }
+                  if (window.caches) {
+                    for (const k of await caches.keys()) {
+                      await caches.delete(k);
+                      say('cache: ' + k);
+                    }
+                  }
+                  localStorage.clear();
+                  sessionStorage.clear();
+                  say('storage cleared');
+                  say('Hotovo. Zavři Chrome úplně (odebrat z recent) a otevři znovu tuto stránku.');
+                } catch (e) {
+                  say(String(e));
+                }
+              };
+            </script>
+          </body>
+          </html>
+          EOF
+
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <html lang="cs">
@@ -44,47 +117,10 @@ jobs:
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Windmi</title>
-            <meta name="theme-color" content="#121214">
-            <style>
-              body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#121214;color:#e0e0e6;font-family:system-ui,sans-serif;padding:24px;text-align:center}
-              a{color:#0a84ff}
-              button{margin-top:12px;padding:12px 18px;border:0;border-radius:10px;background:#0a84ff;color:#fff;font-weight:700}
-              #log{margin-top:16px;color:#8e8e93;font-size:.85rem;white-space:pre-wrap;text-align:left;max-width:420px}
-            </style>
+            <meta http-equiv="refresh" content="0; url=./x/">
           </head>
           <body>
-            <div>
-              <h1>Windmi</h1>
-              <p>Nejdřív vymaž starou instalaci prohlížeče, pak otevři aplikaci.</p>
-              <button type="button" id="go">Vymazat cache a otevřít PWA</button>
-              <p><a href="./w2/reset.html">Jen reset stránka</a></p>
-              <div id="log"></div>
-            </div>
-            <script>
-              document.getElementById('go').onclick = async () => {
-                const log = document.getElementById('log');
-                const lines = [];
-                const say = (m) => { lines.push(m); log.textContent = lines.join('\n'); };
-                try {
-                  if ('serviceWorker' in navigator) {
-                    const regs = await navigator.serviceWorker.getRegistrations();
-                    for (const r of regs) {
-                      await r.unregister();
-                      say('unregister ' + r.scope);
-                    }
-                  }
-                  if (window.caches) {
-                    for (const k of await caches.keys()) {
-                      await caches.delete(k);
-                      say('delete cache ' + k);
-                    }
-                  }
-                } catch (e) {
-                  say(String(e));
-                }
-                location.href = './w2/';
-              };
-            </script>
+            <p><a href="./x/">Pokračovat</a></p>
           </body>
           </html>
           EOF

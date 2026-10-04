@@ -1,9 +1,9 @@
-/** LG Therma PWA — ovládání přes MQTT (WSS). */
+/** Windmi PWA — ovládání přes MQTT (WSS). */
 
 import { MqttBridge } from './mqtt-client.js';
 
-const STORAGE_KEY = 'lgtherma-pwa-settings';
-const MQTT_AUTO_KEY = 'lgtherma-pwa-mqtt-auto';
+const STORAGE_KEY = 'windmi-pwa-settings';
+const MQTT_AUTO_KEY = 'windmi-pwa-mqtt-auto';
 
 const DEFAULT_WSS =
   'wss://n9e16b3c.ala.eu-central-1.emqxsl.com:8084/mqtt';
@@ -15,8 +15,9 @@ const state = {
   tab5Online: false,
   teleFresh: false,
   watchActive: false,
-  autoMode: true,
+  regMode: 'room',
   setpoint: null,
+  eqOffset: null,
   power: false,
   pump: false,
   compressor: false,
@@ -47,8 +48,9 @@ function resetTelemetryState() {
   state.tab5Online = false;
   state.teleFresh = false;
   state.watchActive = false;
-  state.autoMode = true;
+  state.regMode = 'room';
   state.setpoint = null;
+  state.eqOffset = null;
   state.power = false;
   state.pump = false;
   state.compressor = false;
@@ -132,7 +134,25 @@ function renderFaultBanner() {
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    // Migrace ze staré LG Therma PWA (stejný broker, nový topic prefix).
+    if (!raw) {
+      const legacy = localStorage.getItem('lgtherma-pwa-settings');
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (parsed && typeof parsed === 'object') {
+          if (!parsed.prefix || parsed.prefix === 'lgtherma') {
+            parsed.prefix = 'windmi';
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          raw = JSON.stringify(parsed);
+        }
+      }
+      const legacyAuto = localStorage.getItem('lgtherma-pwa-mqtt-auto');
+      if (legacyAuto != null && localStorage.getItem(MQTT_AUTO_KEY) == null) {
+        localStorage.setItem(MQTT_AUTO_KEY, legacyAuto);
+      }
+    }
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -159,9 +179,18 @@ function displaySetpoint() {
   if (!brokerConnected()) {
     return '—';
   }
-  return state.autoMode
-    ? formatTemp(state.setpoint, 1)
-    : formatTemp(state.setpoint, 0);
+  if (state.regMode === 'room') {
+    return formatTemp(state.setpoint, 1);
+  }
+  return formatTemp(state.setpoint, 0);
+}
+
+function formatOffset(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) {
+    return '—';
+  }
+  const n = Math.round(v);
+  return n > 0 ? `+${n}` : String(n);
 }
 
 function requireMqtt() {
@@ -181,6 +210,7 @@ function applyMqttEvent(ev) {
       state.teleFresh = false;
       state.tab5Online = false;
       state.setpoint = null;
+      state.eqOffset = null;
     }
     render();
     return;
@@ -204,8 +234,11 @@ function applyMqttEvent(ev) {
     if (p.setpoint !== undefined) {
       state.setpoint = p.setpoint;
     }
-    if (p.autoMode !== undefined) {
-      state.autoMode = p.autoMode;
+    if (p.regMode !== undefined) {
+      state.regMode = p.regMode;
+    }
+    if (p.eqOffset !== undefined) {
+      state.eqOffset = p.eqOffset;
     }
     if (p.power !== undefined) {
       state.power = p.power;
@@ -239,6 +272,7 @@ function applyMqttEvent(ev) {
       if (!p.tab5Online) {
         state.teleFresh = false;
         state.setpoint = null;
+        state.eqOffset = null;
         state.temps = { room: null, outdoor: null, inlet: null, outlet: null };
         state.poruchaText = '';
         state.alarm = false;
@@ -258,7 +292,22 @@ function adjustSetpoint(delta) {
     return;
   }
   mqtt.publishCmd('setpoint', delta > 0 ? '+' : '-');
-  flashStatus(`→ setpoint ${delta > 0 ? '+' : '-'}`);
+  const label =
+    state.regMode === 'equitherm'
+      ? `korekce ${delta > 0 ? '+' : '-'}`
+      : `setpoint ${delta > 0 ? '+' : '-'}`;
+  flashStatus(`→ ${label}`);
+}
+
+function setRegMode(mode) {
+  if (!requireMqtt()) {
+    return;
+  }
+  const m = mode === 'equitherm' || mode === 'water' ? mode : 'room';
+  mqtt.publishCmd('mode', m);
+  state.regMode = m;
+  flashStatus(`→ mode ${m}`);
+  render();
 }
 
 function setPower(on) {
@@ -361,18 +410,39 @@ function render() {
   renderFaultBanner();
 
   const title = $('#sp-title');
-  if (state.autoMode) {
-    title.textContent = 'Nastavení pokojové teploty';
-    title.className = 'sp-title sp-room';
-  } else {
+  const hint = $('#sp-hint');
+  if (state.regMode === 'equitherm') {
+    title.textContent = 'Ekvitermní SP vody';
+    title.className = 'sp-title sp-ekv';
+    if (brokerConnected() && state.eqOffset != null) {
+      hint.textContent = `Korekce ${formatOffset(state.eqOffset)} °C`;
+      hint.classList.remove('hidden');
+    } else {
+      hint.textContent = '';
+      hint.classList.add('hidden');
+    }
+  } else if (state.regMode === 'water') {
     title.textContent = 'Nastavení teploty vody';
     title.className = 'sp-title sp-water';
+    hint.textContent = '';
+    hint.classList.add('hidden');
+  } else {
+    title.textContent = 'Nastavení pokojové teploty';
+    title.className = 'sp-title sp-room';
+    hint.textContent = '';
+    hint.classList.add('hidden');
   }
 
   const spVal = $('#sp-value');
   spVal.textContent = displaySetpoint();
 
-  $('#water-sp').classList.add('hidden');
+  document.querySelectorAll('.mode-row .chip').forEach((btn) => {
+    const mode = btn.dataset.mode;
+    const active = mode === state.regMode;
+    btn.classList.toggle('chip-active', active);
+    btn.classList.toggle('chip-ekv', active && mode === 'equitherm');
+    btn.classList.toggle('chip-water', active && mode === 'water');
+  });
 
   const live = brokerConnected();
   $('#temp-room').textContent = formatTemp(live ? state.temps.room : null, 1);
@@ -394,7 +464,7 @@ function render() {
     } else if (state.mqttConnected) {
       statusEl.textContent = state.tab5Online
         ? 'Připojeno — Tab5 online'
-        : 'Připojeno — čekám na lgtherma/availability';
+        : 'Připojeno — čekám na windmi/availability';
       statusEl.className = 'cfg-status cfg-status-ok';
     } else if (state.mqttStatus === 'connecting') {
       statusEl.textContent = state.mqttError || 'Připojování…';
@@ -427,6 +497,9 @@ function bindControls() {
   $('#btn-plus').addEventListener('click', () => adjustSetpoint(1));
   $('#btn-start').addEventListener('click', () => setPower(true));
   $('#btn-stop').addEventListener('click', () => setPower(false));
+  document.querySelectorAll('.mode-row .chip').forEach((btn) => {
+    btn.addEventListener('click', () => setRegMode(btn.dataset.mode));
+  });
 }
 
 function bindSettings() {
@@ -434,13 +507,13 @@ function bindSettings() {
   $('#cfg-host').value = saved.host || DEFAULT_WSS;
   $('#cfg-user').value = saved.user || '';
   $('#cfg-pass').value = saved.password || '';
-  $('#cfg-prefix').value = saved.prefix || 'lgtherma';
+  $('#cfg-prefix').value = saved.prefix || 'windmi';
 
   $('#btn-connect').addEventListener('click', () => {
     const host = $('#cfg-host').value.trim();
     const user = $('#cfg-user').value.trim();
     const password = $('#cfg-pass').value;
-    const prefix = $('#cfg-prefix').value.trim() || 'lgtherma';
+    const prefix = $('#cfg-prefix').value.trim() || 'windmi';
     if (!host) {
       state.mqttStatus = 'error';
       state.mqttError = 'Zadej URL brokeru (WSS)';
@@ -468,7 +541,7 @@ function tryAutoConnect() {
       url: saved.host,
       user: saved.user,
       password: saved.password,
-      prefix: saved.prefix || 'lgtherma',
+      prefix: saved.prefix || 'windmi',
     });
   }
 }
@@ -477,7 +550,7 @@ function registerSw() {
   if (!('serviceWorker' in navigator)) {
     return;
   }
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=25').catch(() => {});
 }
 
 function init() {

@@ -6,6 +6,7 @@
   --muted: #8e8e93;
   --room: #0a84ff;
   --water: #ff9f0a;
+  --ekv: #64d2ff;
   --ok: #30d158;
   --warn: #ff9f0a;
   --fault: #ff453a;
@@ -40,7 +41,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 8px);
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 20px);
 }
 
 .topbar {
@@ -254,6 +255,10 @@ body {
   color: var(--water);
 }
 
+.sp-title.sp-ekv {
+  color: var(--ekv);
+}
+
 .sp-row {
   display: flex;
   align-items: center;
@@ -346,6 +351,11 @@ body {
   background: #3d2a0a;
 }
 
+.chip-active.chip-ekv {
+  border-color: var(--ekv);
+  background: #0a3040;
+}
+
 /* Plan strip (read-only) */
 .plan-strip {
   background: var(--panel);
@@ -415,12 +425,12 @@ body {
   color: var(--water);
 }
 
-/* Stavové ikony */
+/* Stavové ikony — pod START/STOP */
 .status-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 8px;
-  margin: 0 0 16px;
+  margin: 20px 0 16px;
 }
 
 .stat {
@@ -473,14 +483,14 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-bottom: 12px;
+  margin: 8px 0 0;
 }
 
 .btn-power {
-  height: 56px;
+  height: 84px;
   border: none;
   border-radius: 10px;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   cursor: pointer;
@@ -576,12 +586,13 @@ body {
   font-size: 0.78rem;
 }
 
-/* Bottom nav */
+/* Bottom nav — vždy nad obsahem (vyšší START/STOP ji jinak překryje) */
 .bottom-nav {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 200;
   max-width: 480px;
   margin: 0 auto;
   height: calc(var(--nav-h) + var(--safe-bottom));
@@ -589,6 +600,7 @@ body {
   display: flex;
   background: #0e0e10;
   border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .nav-btn {

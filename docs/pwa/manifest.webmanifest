@@ -1,7 +1,7 @@
 {
-  "name": "LG Therma",
-  "short_name": "Therma",
-  "description": "Dálkové ovládání tepelného čerpadla LG Therma",
+  "name": "Rotenso Windmi",
+  "short_name": "Windmi",
+  "description": "Dálkové ovládání tepelného čerpadla Rotenso Windmi",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#121214",

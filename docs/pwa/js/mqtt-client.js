@@ -1,4 +1,4 @@
-/** MQTT bridge — lgtherma/* topicy kompatibilní s Tab5 (net_mqtt_client.cpp). */
+/** MQTT bridge — windmi/* topicy kompatibilní s Tab5 (net_mqtt_client.cpp). */
 
 /** Retained zprávy ignorované jen krátce po připojení (kvůli blikání poruchy). */
 const HYDRATE_SKIP_RETAINED = new Set(['tele/alarm', 'tele/porucha']);
@@ -12,6 +12,7 @@ const TELE_SUFFIXES = [
   'tele/temp_outlet',
   'tele/temp_set',
   'tele/reg_mode',
+  'tele/eq_offset',
   'tele/power',
   'tele/pump',
   'tele/compressor',
@@ -27,7 +28,7 @@ export class MqttBridge {
   constructor(onState) {
     this.onState = onState;
     this.client = null;
-    this.prefix = 'lgtherma';
+    this.prefix = 'windmi';
     this.watchTimer = null;
     this.status = 'idle';
     this.error = '';
@@ -59,10 +60,10 @@ export class MqttBridge {
     }
     this.disconnect(false);
     this.userStopped = false;
-    this.prefix = (prefix || 'lgtherma').replace(/\/+$/, '');
+    this.prefix = (prefix || 'windmi').replace(/\/+$/, '');
     this.setStatus('connecting', '');
 
-    const clientId = `LGThermaPWA_${Math.random().toString(16).slice(2, 10)}`;
+    const clientId = `WindmiPWA_${Math.random().toString(16).slice(2, 10)}`;
     this.client = mqtt.connect(url, {
       username: user || undefined,
       password: password || undefined,
@@ -272,8 +273,15 @@ export class MqttBridge {
         break;
       }
       case 'tele/reg_mode':
-        patch.autoMode = msg.toLowerCase() === 'room';
+        patch.regMode = normalizeRegMode(msg);
         break;
+      case 'tele/eq_offset': {
+        const v = parseTemp(msg);
+        if (v !== null) {
+          patch.eqOffset = v;
+        }
+        break;
+      }
       case 'tele/power':
         patch.power = parseOnOff(msg);
         break;
@@ -307,6 +315,20 @@ export class MqttBridge {
 
     this.onState({ type: 'tele', patch });
   }
+}
+
+function normalizeRegMode(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (s === 'room' || s === 'auto' || s === 'pokoj') {
+    return 'room';
+  }
+  if (s === 'equitherm' || s === 'ekv' || s === 'ekviterm' || s === 'ekvitermá') {
+    return 'equitherm';
+  }
+  if (s === 'water' || s === 'manual' || s === 'voda' || s === 'rucni' || s === 'vystupni') {
+    return 'water';
+  }
+  return 'room';
 }
 
 function parseOnOff(v) {

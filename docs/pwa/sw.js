@@ -1,4 +1,4 @@
-const CACHE = 'lg-therma-pwa-v22';
+const CACHE = 'windmi-pwa-v26';
 const ASSETS = [
   './',
   './index.html',

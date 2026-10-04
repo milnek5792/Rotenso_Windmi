@@ -1,7 +1,7 @@
 {
-  "id": "https://milnek5792.github.io/Rotenso_Windmi/w2/",
-  "name": "Rotenso Windmi",
-  "short_name": "Windmi",
+  "id": "https://milnek5792.github.io/Rotenso_Windmi/w2/?id=windmi-control",
+  "name": "Windmi ovládání",
+  "short_name": "WindmiCtrl",
   "description": "Dálkové ovládání tepelného čerpadla Rotenso Windmi",
   "start_url": "./index.html",
   "scope": "./",

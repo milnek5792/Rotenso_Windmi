@@ -42,12 +42,49 @@ jobs:
           <html lang="cs">
           <head>
             <meta charset="UTF-8">
-            <meta http-equiv="refresh" content="0; url=./w2/">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Windmi</title>
-            <link rel="canonical" href="./w2/">
+            <meta name="theme-color" content="#121214">
+            <style>
+              body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#121214;color:#e0e0e6;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+              a{color:#0a84ff}
+              button{margin-top:12px;padding:12px 18px;border:0;border-radius:10px;background:#0a84ff;color:#fff;font-weight:700}
+              #log{margin-top:16px;color:#8e8e93;font-size:.85rem;white-space:pre-wrap;text-align:left;max-width:420px}
+            </style>
           </head>
           <body>
-            <p><a href="./w2/">Otevřít Windmi PWA</a></p>
+            <div>
+              <h1>Windmi</h1>
+              <p>Nejdřív vymaž starou instalaci prohlížeče, pak otevři aplikaci.</p>
+              <button type="button" id="go">Vymazat cache a otevřít PWA</button>
+              <p><a href="./w2/reset.html">Jen reset stránka</a></p>
+              <div id="log"></div>
+            </div>
+            <script>
+              document.getElementById('go').onclick = async () => {
+                const log = document.getElementById('log');
+                const lines = [];
+                const say = (m) => { lines.push(m); log.textContent = lines.join('\n'); };
+                try {
+                  if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    for (const r of regs) {
+                      await r.unregister();
+                      say('unregister ' + r.scope);
+                    }
+                  }
+                  if (window.caches) {
+                    for (const k of await caches.keys()) {
+                      await caches.delete(k);
+                      say('delete cache ' + k);
+                    }
+                  }
+                } catch (e) {
+                  say(String(e));
+                }
+                location.href = './w2/';
+              };
+            </script>
           </body>
           </html>
           EOF

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121214">
+  <title>Windmi — reset instalace</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      background: #121214;
+      color: #e0e0e6;
+      font-family: system-ui, sans-serif;
+      padding: 24px;
+      text-align: center;
+    }
+    button, a.btn {
+      display: inline-block;
+      margin: 8px 6px;
+      padding: 12px 18px;
+      border-radius: 10px;
+      border: 0;
+      background: #0a84ff;
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    a.btn.secondary { background: #2c2c2e; }
+    #log {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 420px;
+      font-size: 0.85rem;
+      color: #8e8e93;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>Reset Windmi PWA</h1>
+    <p>Smaže service workery a cache tohoto webu v prohlížeči. Neodinstaluje systémovou aplikaci WebAPK — tu smaž v Nastavení → Aplikace → Windmi.</p>
+    <button type="button" id="btn-reset">Vymazat SW + cache</button>
+    <a class="btn secondary" href="./">Zpět do aplikace</a>
+    <div id="log"></div>
+  </div>
+  <script>
+    const logEl = document.getElementById('log');
+    function log(msg) {
+      logEl.textContent += msg + '\n';
+    }
+    document.getElementById('btn-reset').addEventListener('click', async () => {
+      logEl.textContent = '';
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            const ok = await reg.unregister();
+            log('SW unregister: ' + (reg.scope || '?') + ' → ' + ok);
+          }
+        }
+        if (window.caches) {
+          const keys = await caches.keys();
+          for (const key of keys) {
+            await caches.delete(key);
+            log('cache delete: ' + key);
+          }
+        }
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+          log('local/session storage cleared');
+        } catch (e) {
+          log('storage: ' + e);
+        }
+        log('Hotovo. Zavři všechny karty github.io, pak otevři znovu ./');
+      } catch (e) {
+        log('Chyba: ' + e);
+      }
+    });
+  </script>
+</body>
+</html>

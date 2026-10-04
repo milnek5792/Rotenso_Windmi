@@ -546,11 +546,40 @@ function tryAutoConnect() {
   }
 }
 
+async function purgeStaleWorkersAndCaches() {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+  const here = `${location.origin}${location.pathname.replace(/\/[^/]*$/, '/')}`;
+  const regs = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(
+    regs.map(async (reg) => {
+      const scope = reg.scope || '';
+      // Starý SW z kořene /Rotenso_Windmi/ by jinak ovládal i /w2/.
+      if (!scope.startsWith(here)) {
+        await reg.unregister();
+      }
+    }),
+  );
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((k) => k.startsWith('lg-therma') || k.startsWith('windmi-pwa-v'))
+        .map((k) => caches.delete(k)),
+    );
+  }
+}
+
 function registerSw() {
   if (!('serviceWorker' in navigator)) {
     return;
   }
-  navigator.serviceWorker.register('./sw.js?v=w2').catch(() => {});
+  purgeStaleWorkersAndCaches()
+    .catch(() => {})
+    .finally(() => {
+      navigator.serviceWorker.register('./sw.js?v=w2b').catch(() => {});
+    });
 }
 
 function init() {

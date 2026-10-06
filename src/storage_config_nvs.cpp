@@ -1,5 +1,7 @@
 #include "storage_config_nvs.h"
 
+#include "app_serial_trace.h"
+
 #include "climate_plan.h"
 #include "climate_regulator.h"
 #include "h2_uart_protocol.h"
@@ -260,10 +262,10 @@ void clearLegacyLgThermaNsOnce() {
 
   Preferences legacy;
   if (legacy.begin(kLegacyNs, false)) {
-    Serial.println("[NVS] clearing legacy lg_therma (jednou)...");
+    APP_SLOG_LN("[NVS] clearing legacy lg_therma (jednou)...");
     legacy.clear();
     legacy.end();
-    Serial.println("[NVS] cleared legacy namespace lg_therma");
+    APP_SLOG_LN("[NVS] cleared legacy namespace lg_therma");
   }
   s_prefs.putBool(kKeyLegacyCleared, true);
 }
@@ -372,7 +374,7 @@ uint8_t storageLoadBrightness(void) {
   if (v > 97) {
     v = 97;
   }
-  Serial.printf("[NVS] load jas=%d\n", v);
+  APP_SLOG("[NVS] load jas=%d\n", v);
   return static_cast<uint8_t>(v);
 }
 
@@ -394,7 +396,10 @@ void storageSaveBrightness(uint8_t percent) {
     s_prefs.remove(kKeyBlPct);
     n = s_prefs.putInt(kKeyBlPct, percent);
   }
-  Serial.printf("[NVS] save jas=%u → %s\n", (unsigned)percent, n ? "ok" : "FAIL");
+  APP_SLOG("[NVS] save jas=%u → %s\n", (unsigned)percent, n ? "ok" : "FAIL");
+  if (!n) {
+    Serial.printf("[NVS] save jas=%u → FAIL\n", (unsigned)percent);
+  }
 }
 
 uint32_t storageLoadSleepTimeoutSec(void) {
@@ -415,7 +420,7 @@ uint32_t storageLoadSleepTimeoutSec(void) {
       }
     }
   }
-  Serial.printf("[NVS] load usinani=%lus\n", (unsigned long)sec);
+  APP_SLOG("[NVS] load usinani=%lus\n", (unsigned long)sec);
   return sec;
 }
 
@@ -433,7 +438,10 @@ void storageSaveSleepTimeoutSec(uint32_t sec) {
     s_prefs.remove(kKeyBlSleep);
     n = s_prefs.putUInt(kKeyBlSleep, sec);
   }
-  Serial.printf("[NVS] save usinani=%lu → %s\n", (unsigned long)sec, n ? "ok" : "FAIL");
+  APP_SLOG("[NVS] save usinani=%lu → %s\n", (unsigned long)sec, n ? "ok" : "FAIL");
+  if (!n) {
+    Serial.printf("[NVS] save usinani=%lu → FAIL\n", (unsigned long)sec);
+  }
 }
 
 bool storagePlanConfigKeyExists(void) {
@@ -494,7 +502,7 @@ bool storageLoadPlanConfig(PlanTydenConfig* cfg) {
   }
   // Nikdy nepřepisovat NVS při bootu — špatný decode + migrate dřív mazal plán po uploadu.
   // Upgrade na v5 proběhne až při climatePlanSave (odchod z UI / dirty flush).
-  Serial.printf("[NVS] plan_cfg load ok ver=%u payload=%u aktivni=%d\n",
+  APP_SLOG("[NVS] plan_cfg load ok ver=%u payload=%u aktivni=%d\n",
                 (unsigned)version, (unsigned)payloadLen, (int)cfg->aktivni);
   return true;
 }
@@ -527,8 +535,11 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg) {
   savePlanConfigLocked(cfg);
   const size_t checkLen = s_prefs.getBytesLength(kKeyPlan);
   const bool ok = checkLen == 6 + kPlanPayloadPacked;
-  Serial.printf("[NVS] plan_cfg save aktivni=%d bytes=%u → %s\n",
+  APP_SLOG("[NVS] plan_cfg save aktivni=%d bytes=%u → %s\n",
                 (int)cfg->aktivni, (unsigned)checkLen, ok ? "ok" : "FAIL");
+  if (!ok) {
+    Serial.printf("[NVS] plan_cfg save FAIL bytes=%u\n", (unsigned)checkLen);
+  }
 }
 
 void saveRegulatorConfigLocked(const RegulatorConfig* cfg) {
@@ -646,8 +657,11 @@ void storageSaveRegulatorConfig(const RegulatorConfig* cfg) {
   saveRegulatorConfigLocked(cfg);
   const size_t checkLen = s_prefs.getBytesLength(kKeyReg);
   const bool ok = checkLen == 6 + sizeof(RegulatorConfig);
-  Serial.printf("[NVS] reg_cfg save room_sp=%.1f bytes=%u → %s\n",
+  APP_SLOG("[NVS] reg_cfg save room_sp=%.1f bytes=%u → %s\n",
                 (double)cfg->room_sp_c, (unsigned)checkLen, ok ? "ok" : "FAIL");
+  if (!ok) {
+    Serial.printf("[NVS] reg_cfg save FAIL bytes=%u\n", (unsigned)checkLen);
+  }
 }
 
 bool storageLoadUiRezim(uint8_t* out) {
@@ -768,7 +782,7 @@ void storagePruneEnergyWeekPowerOldDaysUnlocked(void) {
     const char* key = weekPowerKey(d);
     if (s_prefs.isKey(key)) {
       s_prefs.remove(key);
-      Serial.printf("[NVS] pruned %s (free space for today graph)\n", key);
+      APP_SLOG("[NVS] pruned %s (free space for today graph)\n", key);
     }
   }
 }
@@ -901,5 +915,5 @@ void storageClearEnergyHistory(void) {
   for (int d = 0; d < 7; ++d) {
     s_prefs.remove(weekPowerKey(d));
   }
-  Serial.println("[NVS] energy history cleared");
+  APP_SLOG_LN("[NVS] energy history cleared");
 }

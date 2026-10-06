@@ -1,6 +1,8 @@
 // ui_display_mgr.cpp — jas (NVS) + usínání backlightu, Tab5 M5Unified
 #include "ui_display_mgr.h"
 
+#include "app_serial_trace.h"
+
 #include "storage_config_nvs.h"
 #include "ui_display_bus.h"
 
@@ -47,7 +49,7 @@ void goSleep() {
     M5.Display.setBrightness(0);
     uiDisplayBusUnlock();
   }
-  Serial.printf("[DISP] sleep (timeout %lu s)\n", (unsigned long)s_timeoutSec);
+  APP_SLOG("[DISP] sleep (timeout %lu s)\n", (unsigned long)s_timeoutSec);
 }
 
 }  // namespace
@@ -63,7 +65,7 @@ void uiDisplayInit(void) {
   s_lastActivityMs = millis();
   s_asleep = false;
   s_inited = true;
-  Serial.printf("[DISP] NVS jas=%u%% usinani=%lus (%s)\n",
+  APP_SLOG("[DISP] NVS jas=%u%% usinani=%lus (%s)\n",
                 (unsigned)s_brightness, (unsigned long)s_timeoutSec,
                 uiDisplaySleepTimeoutLabel());
 }
@@ -87,7 +89,7 @@ void uiDisplayWake(void) {
   s_lastActivityMs = millis();
   if (wasAsleep) {
     s_ignoreUntilRelease = true;
-    Serial.printf("[DISP] wake brightness=%u%%\n", (unsigned)s_brightness);
+    APP_SLOG("[DISP] wake brightness=%u%%\n", (unsigned)s_brightness);
   }
 }
 
@@ -126,7 +128,7 @@ void uiDisplaySetBrightness(uint8_t percent, bool persist) {
     storageSaveBrightness(percent);
     s_persistedBrightness = percent;
     s_brightnessPending = false;
-    Serial.printf("[DISP] NVS save jas=%u%%\n", (unsigned)percent);
+    APP_SLOG("[DISP] NVS save jas=%u%%\n", (unsigned)percent);
   } else if (percent != s_persistedBrightness) {
     s_brightnessPending = true;
     s_brightnessPendingMs = millis();
@@ -141,7 +143,7 @@ void uiDisplaySetSleepTimeoutSec(uint32_t sec, bool persist) {
   if (persist) {
     storageSaveSleepTimeoutSec(sec);
     s_persistedSleepSec = sec;
-    Serial.printf("[DISP] NVS save usinani=%lus\n", (unsigned long)sec);
+    APP_SLOG("[DISP] NVS save usinani=%lus\n", (unsigned long)sec);
   }
   uiDisplayNoteActivity();
 }
@@ -155,7 +157,7 @@ void uiDisplayFlushPendingStorage(void) {
     if (s_brightness != s_persistedBrightness) {
       storageSaveBrightness(s_brightness);
       s_persistedBrightness = s_brightness;
-      Serial.printf("[DISP] deferred NVS jas=%u%%\n", (unsigned)s_brightness);
+      APP_SLOG("[DISP] deferred NVS jas=%u%%\n", (unsigned)s_brightness);
     }
     s_brightnessPending = false;
   }

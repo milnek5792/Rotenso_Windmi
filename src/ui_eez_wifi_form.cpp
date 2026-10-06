@@ -1,3 +1,4 @@
+#include "app_serial_trace.h"
 #include "src/ui_eez_wifi_form.h"
 
 #include "app_cmd.h"
@@ -125,7 +126,7 @@ bool uiWifiFormSaveCredentials() {
     return false;
   }
   netWifiSetCredentials(ssid, pass);
-  Serial.printf("[NET] Wi-Fi ulozeno: %s\n", ssid);
+  APP_SLOG("[NET] Wi-Fi ulozeno: %s\n", ssid);
   return true;
 }
 

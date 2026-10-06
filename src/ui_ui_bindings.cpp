@@ -1,4 +1,5 @@
 #if 0  // nahrazeno ui_bus_bindings + app_cmd (unified 7B architektura)
+#include "app_serial_trace.h"
 #include "ui_ui_bindings.h"
 #include "bus_lg_config.h"
 #include "bus_lg_lin_api.h"
@@ -126,7 +127,7 @@ static void uiProvedTeplotaZmena(int delta) {
   int nova = (int)aktualniCilova + delta;
   if (nova < 15 || nova > 65) {
     lgModelUnlock();
-    Serial.printf("[UI] teplota limit (%d)\n", nova);
+    APP_SLOG("[UI] teplota limit (%d)\n", nova);
     return;
   }
   novaCilovaTeplota = (uint8_t)nova;
@@ -136,7 +137,7 @@ static void uiProvedTeplotaZmena(int delta) {
   lgModelUnlock();
 
   uiEez.teplota_vody_set = (float)novaCilovaTeplota;
-  Serial.printf("[UI] teplota %u -> %u C (ceka A0 zapis)\n",
+  APP_SLOG("[UI] teplota %u -> %u C (ceka A0 zapis)\n",
                 (unsigned)aktualniCilova, (unsigned)novaCilovaTeplota);
   potrebaObnovitDisplej = true;
 }
@@ -163,7 +164,7 @@ static void uiSettingsMqttToggle() {
 }
 
 static void uiSettingsMqttConnect() {
-  Serial.println("[UI] MQTT Pripojit");
+  APP_SLOG_LN("[UI] MQTT Pripojit");
   netMqttConnect();
   uiSettingsSyncNet();
 }
@@ -172,7 +173,7 @@ static void uiSettingsPlaceholder(const char* sekce) {
   char hint[64];
   snprintf(hint, sizeof(hint), "%s — pripravuje se", sekce);
   strncpy(uiEez.set_sys_hint, hint, sizeof(uiEez.set_sys_hint));
-  Serial.printf("[UI] nastaveni %s — zatim neimplementovano\n", sekce);
+  APP_SLOG("[UI] nastaveni %s — zatim neimplementovano\n", sekce);
 }
 
 void uiBindingStartStop() {
@@ -206,11 +207,11 @@ void uiBindingsZpracujAkci(UiAkceTlacitko akce) {
       break;
     case UI_AKCE_MENU:
       uiNavigateTo(SCREEN_ID_SETTINGS);
-      Serial.println("[UI] obrazovka Nastaveni");
+      APP_SLOG_LN("[UI] obrazovka Nastaveni");
       break;
     case UI_AKCE_ZPET:
       uiNavigateTo(SCREEN_ID_MAIN);
-      Serial.println("[UI] obrazovka Hlavni");
+      APP_SLOG_LN("[UI] obrazovka Hlavni");
       break;
     case UI_AKCE_WIFI_TOGGLE:
       uiSettingsWifiToggle();
@@ -220,7 +221,7 @@ void uiBindingsZpracujAkci(UiAkceTlacitko akce) {
       break;
     case UI_AKCE_WIFI_EDIT:
       uiNavigateTo(SCREEN_ID_WIFI_SETUP);
-      Serial.println("[UI] obrazovka Wi-Fi sit");
+      APP_SLOG_LN("[UI] obrazovka Wi-Fi sit");
       break;
     case UI_AKCE_WIFI_FORM_CONNECT:
       uiSettingsWifiConnect();
@@ -241,7 +242,7 @@ void uiBindingsZpracujAkci(UiAkceTlacitko akce) {
       }
       strncpy(uiEez.set_sys_hint, hint, sizeof(uiEez.set_sys_hint));
       uiEez.set_sys_hint[sizeof(uiEez.set_sys_hint) - 1] = '\0';
-      Serial.printf("[UI] ROOM: ok=%d T=%.1f rssi=%d\n",
+      APP_SLOG("[UI] ROOM: ok=%d T=%.1f rssi=%d\n",
                     (int)climateRoomIsOk(), climateRoomTempC(),
                     climateRoomRssi());
       break;

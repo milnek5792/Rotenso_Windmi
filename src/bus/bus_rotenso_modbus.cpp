@@ -2,6 +2,7 @@
 // MVP: 1 TX/tick — TEMP (0001..0004) ↔ MODE (002C..002D); zápisy mají prioritu.
 #include "src/bus/bus_rotenso_modbus.h"
 
+#include "app_serial_trace.h"
 #include "bus_rotenso_config.h"
 #include "src/bus_lg_model.h"
 
@@ -278,7 +279,7 @@ bool mbWriteSingle(uint16_t addr, uint16_t value) {
     return false;
   }
   noteOk();
-  Serial.println("[WM] WR OK");
+  APP_SLOG_LN("[WM] WR OK");
   return true;
 }
 
@@ -346,7 +347,7 @@ bool processOneWrite() {
     if (want) {
       const uint16_t mode =
           wantOn ? (uint16_t)WINDMI_SET_HEAT : (uint16_t)WINDMI_SET_OFF;
-      Serial.printf("[WM] WR MODE %u\n", (unsigned)mode);
+      APP_SLOG("[WM] WR MODE %u\n", (unsigned)mode);
       if (!mbWriteSingle((uint16_t)WINDMI_REG_SETTING_MODE, mode)) {
         s_writeNextMs = millis() + 500u;
         return true;
@@ -379,7 +380,7 @@ bool processOneWrite() {
         clamped = (uint8_t)WINDMI_WATER_SP_MAX_C;
       }
       const uint16_t raw = (uint16_t)clamped * 10u;
-      Serial.printf("[WM] WR SP raw=%u\n", (unsigned)raw);
+      APP_SLOG("[WM] WR SP raw=%u\n", (unsigned)raw);
       if (!mbWriteSingle((uint16_t)WINDMI_REG_WATER_SP, raw)) {
         s_writeNextMs = millis() + 500u;
         return true;
@@ -429,6 +430,7 @@ void runTemps() {
   } else {
     lgModelTouchLive();
   }
+#if APP_SERIAL_TRACE
   char oS[12], iS[12], wS[12];
   if (outOk) {
     snprintf(oS, sizeof(oS), "%.1f", (double)outdoor);
@@ -445,7 +447,8 @@ void runTemps() {
   } else {
     snprintf(wS, sizeof(wS), "n/a");
   }
-  Serial.printf("[WM] TEMP out=%s in=%s tw=%s\n", oS, iS, wS);
+  APP_SLOG("[WM] TEMP out=%s in=%s tw=%s\n", oS, iS, wS);
+#endif
 }
 
 void runMode() {
@@ -456,8 +459,8 @@ void runMode() {
   s_setting = be16(&buf[0]);
   s_running = be16(&buf[2]);
   publishStatus();
-  Serial.printf("[WM] MODE set=%u run=%u\n", (unsigned)s_setting,
-                (unsigned)s_running);
+  APP_SLOG("[WM] MODE set=%u run=%u\n", (unsigned)s_setting,
+           (unsigned)s_running);
 }
 
 void runLoad() {
@@ -502,8 +505,8 @@ void runFlow() {
   }
   s_flow = be16(buf);
   publishStatus();
-  Serial.printf("[WM] FLOW raw=%u (%.2f m3/h)\n", (unsigned)s_flow,
-                (double)s_flow * 0.01);
+  APP_SLOG("[WM] FLOW raw=%u (%.2f m3/h)\n", (unsigned)s_flow,
+           (double)s_flow * 0.01);
 }
 
 void runQuiet() {
@@ -513,9 +516,9 @@ void runQuiet() {
   }
   s_quiet = be16(buf);
   publishStatus();
-  Serial.printf("[WM] LED load=0x%04X comp=%d pump=%u flow=%u quiet=%u\n",
-                (unsigned)s_load, (int)s_compX10, (unsigned)s_pump,
-                (unsigned)s_flow, (unsigned)s_quiet);
+  APP_SLOG("[WM] LED load=0x%04X comp=%d pump=%u flow=%u quiet=%u\n",
+           (unsigned)s_load, (int)s_compX10, (unsigned)s_pump,
+           (unsigned)s_flow, (unsigned)s_quiet);
 }
 
 void runAlarm() {
@@ -551,7 +554,7 @@ void runSp() {
   }
   const uint8_t sp = (uint8_t)(c + 0.5f);
   lgModelSetMbWaterSp(sp);
-  Serial.printf("[WM] SP %u C\n", (unsigned)sp);
+  APP_SLOG("[WM] SP %u C\n", (unsigned)sp);
 }
 
 bool readCfgRegSoft(uint16_t addr, uint16_t* out) {
@@ -588,7 +591,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.ctrl_mode = raw;
         s_cfgAcc.mask |= 0x01u;
-        Serial.printf("[WM] CFG 100D ctrl=%u\n", (unsigned)raw);
+        APP_SLOG("[WM] CFG 100D ctrl=%u\n", (unsigned)raw);
       }
       break;
     case CFG_UI_TYPE:
@@ -598,7 +601,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.ui_type = raw;
         s_cfgAcc.mask |= 0x0100u;
-        Serial.printf("[WM] CFG 0209 ui=%u\n", (unsigned)raw);
+        APP_SLOG("[WM] CFG 0209 ui=%u\n", (unsigned)raw);
       }
       break;
     case CFG_CURVE:
@@ -609,7 +612,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.curve_type = v;
         s_cfgAcc.mask |= 0x02u;
-        Serial.printf("[WM] CFG 0245 curve=%d\n", (int)v);
+        APP_SLOG("[WM] CFG 0245 curve=%d\n", (int)v);
       }
       break;
     case CFG_BACKUP:
@@ -619,7 +622,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.backup_heater = raw;
         s_cfgAcc.mask |= 0x04u;
-        Serial.printf("[WM] CFG 0259 backup=%u\n", (unsigned)raw);
+        APP_SLOG("[WM] CFG 0259 backup=%u\n", (unsigned)raw);
       }
       break;
     case CFG_MIN_OAT:
@@ -630,7 +633,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.min_oat_heat_x10 = v;
         s_cfgAcc.mask |= 0x08u;
-        Serial.printf("[WM] CFG 0202 minOAT=%d\n", (int)v);
+        APP_SLOG("[WM] CFG 0202 minOAT=%d\n", (int)v);
       }
       break;
     case CFG_IBH_WARM:
@@ -640,7 +643,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.ibh_warmup_min = raw;
         s_cfgAcc.mask |= 0x10u;
-        Serial.printf("[WM] CFG 025A warmup=%u\n", (unsigned)raw);
+        APP_SLOG("[WM] CFG 025A warmup=%u\n", (unsigned)raw);
       }
       break;
     case CFG_IBH_DT:
@@ -651,7 +654,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.ibh_delta_t_x10 = v;
         s_cfgAcc.mask |= 0x20u;
-        Serial.printf("[WM] CFG 025B ibhDT=%d\n", (int)v);
+        APP_SLOG("[WM] CFG 025B ibhDT=%d\n", (int)v);
       }
       break;
     case CFG_IBH_OAT:
@@ -662,7 +665,7 @@ bool runConfigStep() {
         }
         s_cfgAcc.ibh_oat_x10 = v;
         s_cfgAcc.mask |= 0x40u;
-        Serial.printf("[WM] CFG 025C ibhOAT=%d\n", (int)v);
+        APP_SLOG("[WM] CFG 025C ibhOAT=%d\n", (int)v);
       }
       break;
     case CFG_PUMP_DT:
@@ -673,13 +676,13 @@ bool runConfigStep() {
         }
         s_cfgAcc.pump_delta_t_x10 = v;
         s_cfgAcc.mask |= 0x80u;
-        Serial.printf("[WM] CFG 0239 pumpDT=%d\n", (int)v);
+        APP_SLOG("[WM] CFG 0239 pumpDT=%d\n", (int)v);
       }
       break;
     case CFG_REQ_FREQ:
       if (readCfgRegSoft((uint16_t)WINDMI_REG_REQ_COMP_FREQ, &raw)) {
         lgModelSetMbLiveExtras((int16_t)raw, true);
-        Serial.printf("[WM] CFG 100F reqHz=%d\n", (int)(int16_t)raw);
+        APP_SLOG("[WM] CFG 100F reqHz=%d\n", (int)(int16_t)raw);
       }
       break;
     default:
@@ -693,7 +696,7 @@ bool runConfigStep() {
     if (changed || s_cfgAcc.valid != wasValid) {
       lgModelSetMbHpConfig(&s_cfgAcc);
     }
-    Serial.printf("[WM] CFG done mask=0x%02X valid=%d\n",
+    APP_SLOG("[WM] CFG done mask=0x%02X valid=%d\n",
                   (unsigned)s_cfgAcc.mask, (int)s_cfgAcc.valid);
     s_cfgNeedPoll = false;
     s_cfgStep = 0;

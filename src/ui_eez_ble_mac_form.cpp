@@ -1,3 +1,4 @@
+#include "app_serial_trace.h"
 #include "ui_eez_ble_mac_form.h"
 
 #include "app_cmd.h"
@@ -163,7 +164,7 @@ bool uiBleMacFormSave(void) {
     return false;
   }
   setHint("MAC uloženo - posílám na H2", kColGreen);
-  Serial.printf("[ROOM] MAC form room=%s\n", room);
+  APP_SLOG("[ROOM] MAC form room=%s\n", room);
   return true;
 }
 

@@ -1,5 +1,6 @@
 #include "net_ntp_time.h"
 
+#include "app_serial_trace.h"
 #include "net_wifi_mgr.h"
 #include "net_mqtt_client.h"
 #include "time_config.h"
@@ -83,7 +84,7 @@ void loadSystemTimeFromRtc() {
   if (timeLooksValid(time(nullptr))) {
     setStatus("Cas z RTC");
     pushTimeToUi(false);
-    Serial.println("[NTP] systemovy cas nacten z RTC");
+    APP_SLOG_LN("[NTP] systemovy cas nacten z RTC");
   }
 }
 
@@ -99,7 +100,7 @@ void syncRtcFromSystemUtc() {
   if (!utc) { return; }
 
   M5.Rtc.setDateTime(utc);
-  Serial.printf("[NTP] RTC nastaveno UTC %04d-%02d-%02d %02d:%02d:%02d\n",
+  APP_SLOG("[NTP] RTC nastaveno UTC %04d-%02d-%02d %02d:%02d:%02d\n",
                 utc->tm_year + 1900, utc->tm_mon + 1, utc->tm_mday,
                 utc->tm_hour, utc->tm_min, utc->tm_sec);
 }
@@ -116,7 +117,7 @@ void startSntp() {
   s_phase = NtpPhase::kWaiting;
   s_waitStartedMs = millis();
   setStatus("Synchronizace NTP...");
-  Serial.println("[NTP] start SNTP");
+  APP_SLOG_LN("[NTP] start SNTP");
 }
 
 }  // namespace
@@ -158,7 +159,7 @@ void netNtpTick() {
       s_lastResyncMs = millis();
       setStatus("Čas synchronizován");
       pushTimeToUi(true);
-      Serial.println("[NTP] synchronizace OK");
+      APP_SLOG_LN("[NTP] synchronizace OK");
     } else if (millis() - s_waitStartedMs >= kNtpTimeoutMs) {
       s_phase = NtpPhase::kFailed;
       setStatus("NTP timeout");

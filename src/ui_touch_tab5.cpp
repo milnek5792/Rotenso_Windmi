@@ -1,5 +1,6 @@
 #include "ui_touch_tab5.h"
 
+#include "app_serial_trace.h"
 #include "net_sdio_arbiter.h"
 #include "ui_display_mgr.h"
 #include "ui_ui_lvgl.h"
@@ -416,9 +417,9 @@ void uiTouchVisualSync() {
 }
 
 void uiTouchTab5SetupCheck() {
-  Serial.printf("[setup] touch enabled=%d size=%dx%d\n",
-                (int)M5.Touch.isEnabled(), M5.Display.width(),
-                M5.Display.height());
+  APP_SLOG("[setup] touch enabled=%d size=%dx%d\n",
+           (int)M5.Touch.isEnabled(), M5.Display.width(),
+           M5.Display.height());
 }
 
 bool uiTouchTab5Poll() {
@@ -441,7 +442,7 @@ bool uiTouchTab5Poll() {
 
     if (!s_loggedFirstTouch) {
       s_loggedFirstTouch = true;
-      Serial.printf("[TOUCH] first @ %d,%d base=%d,%d\n", x, y, baseX, baseY);
+      APP_SLOG("[TOUCH] first @ %d,%d base=%d,%d\n", x, y, baseX, baseY);
     }
 
     if (!s_fingerDown) {
@@ -465,8 +466,8 @@ bool uiTouchTab5Poll() {
         }
       }
       setPhase(kPhaseDown, x, y, s_downBtnIdx);
-      Serial.printf("[TOUCH] down %d,%d base=%d,%d btn=%d dyn=%p\n", x, y, baseX,
-                    baseY, (int)s_downBtnIdx, (void*)s_downLvglObj);
+      APP_SLOG("[TOUCH] down %d,%d base=%d,%d btn=%d dyn=%p\n", x, y, baseX,
+               baseY, (int)s_downBtnIdx, (void*)s_downLvglObj);
     } else {
       s_lastX = x;
       s_lastY = y;
@@ -487,8 +488,8 @@ bool uiTouchTab5Poll() {
 
   s_fingerDown = false;
   setPhase(kPhaseUp, s_downX, s_downY, s_downBtnIdx);
-  Serial.printf("[TOUCH] up base=%d,%d btn=%d dyn=%p\n", s_downX, s_downY,
-                (int)s_downBtnIdx, (void*)s_downLvglObj);
+  APP_SLOG("[TOUCH] up base=%d,%d btn=%d dyn=%p\n", s_downX, s_downY,
+           (int)s_downBtnIdx, (void*)s_downLvglObj);
 
   const int8_t idx = s_downBtnIdx;
   lv_obj_t* dyn = s_downLvglObj;
@@ -511,34 +512,34 @@ bool uiTouchTab5Poll() {
   if (dyn) {
     if (!isBrightnessSlider(dyn) &&
         !touchReleaseValidDyn(dyn, s_lastX, s_lastY)) {
-      Serial.printf("[TOUCH] dyn drift/miss @ %d,%d\n", s_downX, s_downY);
+      APP_SLOG("[TOUCH] dyn drift/miss @ %d,%d\n", s_downX, s_downY);
       setPhase(kPhaseIdle, 0, 0, -1);
       return false;
     }
     s_lastActionMs = millis();
     noteUserActivity();
-    Serial.printf("[TOUCH] dyn click @ %d,%d\n", s_downX, s_downY);
+    APP_SLOG("[TOUCH] dyn click @ %d,%d\n", s_downX, s_downY);
     fireLvglClick(dyn);
     setPhase(kPhaseIdle, 0, 0, -1);
     return true;
   }
 
   if (idx < 0) {
-    Serial.printf("[TOUCH] miss base=%d,%d\n", s_downX, s_downY);
+    APP_SLOG("[TOUCH] miss base=%d,%d\n", s_downX, s_downY);
     setPhase(kPhaseIdle, 0, 0, -1);
     return false;
   }
 
   if (!touchReleaseValidMain(idx, s_lastX, s_lastY)) {
-    Serial.printf("[TOUCH] drift/miss btn=%d base=%d,%d rel=%d,%d\n", (int)idx,
-                  s_downX, s_downY, s_lastX, s_lastY);
+    APP_SLOG("[TOUCH] drift/miss btn=%d base=%d,%d rel=%d,%d\n", (int)idx,
+             s_downX, s_downY, s_lastX, s_lastY);
     setPhase(kPhaseIdle, 0, 0, -1);
     return false;
   }
 
   s_lastActionMs = millis();
   noteUserActivity();
-  Serial.printf("[TOUCH] %s @ %d,%d\n", kMainButtons[idx].name, s_downX, s_downY);
+  APP_SLOG("[TOUCH] %s @ %d,%d\n", kMainButtons[idx].name, s_downX, s_downY);
   if (kMainButtons[idx].action) {
     kMainButtons[idx].action(nullptr);
   }

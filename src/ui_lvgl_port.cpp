@@ -1,5 +1,6 @@
 // ui_lvgl_port.cpp — LVGL 9 display + touch on M5Stack Tab5 (M5Unified)
 #include "ui_ui_lvgl.h"
+#include "app_serial_trace.h"
 #include "ui_eez_ui.h"
 #include "ui_eez_screens.h"
 #include "ui_eez_vars.h"
@@ -43,7 +44,7 @@ static void lvglRepaintAfterWake(void) {
   if (!s_disp) {
     return;
   }
-  Serial.println("[LVGL] wake repaint");
+  APP_SLOG_LN("[LVGL] wake repaint");
   s_wakeRepaint = true;
   ui_tick();
   uiEezApplySignalLeds();
@@ -175,7 +176,7 @@ void uiLvglInit() {
     Serial.println("[LVGL] draw buf ALLOC FAIL");
     return;
   }
-  Serial.printf("[LVGL] draw buf %u KB @ %p (%s)\n",
+  APP_SLOG("[LVGL] draw buf %u KB @ %p (%s)\n",
                 (unsigned)(s_drawBufBytes / 1024), (void*)s_drawBuf,
                 ((uintptr_t)s_drawBuf >= 0x48000000u) ? "PSRAM?" : "INTERNAL");
 
@@ -217,7 +218,7 @@ void uiLvglInit() {
   s_verRes = verRes;
 
   s_initDone = true;
-  Serial.println("[LVGL] init done");
+  APP_SLOG_LN("[LVGL] init done");
 }
 
 bool uiLvglInitDone() { return s_initDone; }
@@ -225,7 +226,7 @@ bool uiLvglInitDone() { return s_initDone; }
 void uiLvglSetOtaLock(bool on) {
   s_otaLock = on;
   if (on) {
-    Serial.println("[LVGL] OTA lock");
+    APP_SLOG_LN("[LVGL] OTA lock");
   }
 }
 
@@ -234,7 +235,7 @@ bool uiLvglIsOtaLocked(void) { return s_otaLock; }
 void uiLvglSetFrozen(bool frozen) {
   if (s_frozen == frozen) { return; }
   s_frozen = frozen;
-  Serial.printf("[LVGL] %s\n", frozen ? "freeze" : "unfreeze");
+  APP_SLOG("[LVGL] %s\n", frozen ? "freeze" : "unfreeze");
   if (!frozen && s_initDone) {
     // Po MQTT: bez full-screen invalidate — jinak SDIO shodí session (state=-3).
     if (!netSdioMqttSession()) {
@@ -250,14 +251,14 @@ void uiLvglSetSdioLight(bool on) {
   if (s_sdioLight == on) { return; }
   s_sdioLight = on;
   // Jen při skutečné změně (ne spam při MQTT poll)
-  Serial.printf("[LVGL] sdio-light %s\n", on ? "ON" : "OFF");
+  APP_SLOG("[LVGL] sdio-light %s\n", on ? "ON" : "OFF");
 }
 
 void uiLvglBeginFullPaint(uint32_t holdMs) {
   s_fullPaint = true;
   s_fullPaintUntilMs = millis() + holdMs;
   s_lastFlushMs = 0;
-  Serial.printf("[LVGL] full-paint %lu ms\n", (unsigned long)holdMs);
+  APP_SLOG("[LVGL] full-paint %lu ms\n", (unsigned long)holdMs);
 }
 
 bool uiLvglIsFullPaint(void) {

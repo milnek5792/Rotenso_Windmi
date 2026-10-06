@@ -60,15 +60,11 @@ void netTask(void* /*arg*/) {
   vTaskDelay(pdMS_TO_TICKS(800));
   ESP_LOGI(TAG, "task start core=%d", (int)xPortGetCoreID());
 
-  uint32_t freezeUntilMs = 0;
-  uint32_t lastHbMs = 0;
-
   for (;;) {
     const bool otaBusy = netOtaIsBusy();
     const bool wifiBusy = netWifiIsBusy();
     const bool mqttBusy = netMqttIsBusy();
     const bool roomBusy = climateRoomIsBusy();
-    const uint32_t now = millis();
 
 #if LG_USE_EEZ_LVGL
     if (!otaBusy) {
@@ -79,17 +75,14 @@ void netTask(void* /*arg*/) {
         if (uiLvglIsFrozen()) {
           uiLvglSetFrozen(false);
         }
-        freezeUntilMs = 0;
       } else if (wifiBusy) {
         // Nepřekreslovat freeze při Wi‑Fi connect — jinak nejde menu / přepínání
         // obrazovek (touch běží, ale flush se zahazuje). NVS flush už je gated
         // v main loop přes netWifiIsBusy().
-        freezeUntilMs = 0;
         if (uiLvglIsFrozen() && !mqttBusy) {
           uiLvglSetFrozen(false);
         }
       } else if (!mqttBusy) {
-        freezeUntilMs = 0;
         if (uiLvglIsFrozen()) {
           uiLvglSetFrozen(false);
         }
@@ -104,16 +97,6 @@ void netTask(void* /*arg*/) {
       climateRoomTick();
       climateEnergyTick();
       netMqttTick();
-    }
-
-    if (now - lastHbMs >= 3000) {
-      lastHbMs = now;
-      Serial.printf("[NET] HB wifi=%d mqtt=%d room=%d watch=%d heap=%u\r\n",
-                    (int)netWifiIsConnected(),
-                    (int)netMqttIsConnected(),
-                    (int)climateRoomIsOk(),
-                    (int)netWatchActive(),
-                    (unsigned)ESP.getFreeHeap());
     }
 
     const bool busy = wifiBusy || mqttBusy || roomBusy || netRadioBusy();

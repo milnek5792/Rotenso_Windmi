@@ -1,5 +1,7 @@
 #include "climate_plan.h"
 
+#include "app_serial_trace.h"
+
 #include "climate_regulator.h"
 #include "storage_config_nvs.h"
 #include "ui_bus_bindings.h"
@@ -291,14 +293,14 @@ void climatePlanInit(void) {
   if (!loaded) {
     climatePlanSetDefaults();
     if (!storagePlanConfigKeyExists()) {
-      Serial.println("[NVS] plan_cfg chybi — ukladam vychozi");
+      APP_SLOG_LN("[NVS] plan_cfg chybi — ukladam vychozi");
       climatePlanSave();
     } else {
       // Ne prepisovat NVS — pri chybe decode zustane blob pro migraci / servis.
       Serial.println("[NVS] plan_cfg load FAIL — vychozi v RAM, NVS beze zmeny");
     }
   } else {
-    Serial.printf("[NVS] plan_cfg ok aktivni=%d\n", (int)g_planConfig.aktivni);
+    APP_SLOG("[NVS] plan_cfg ok aktivni=%d\n", (int)g_planConfig.aktivni);
   }
   // Sanitize vždy — limity délek / buněk; layout se nemění, data z NVS zůstanou.
   for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {

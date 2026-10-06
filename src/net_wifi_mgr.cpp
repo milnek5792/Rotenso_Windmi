@@ -1,5 +1,7 @@
 #include "net_wifi_mgr.h"
 
+#include "app_serial_trace.h"
+
 #include "storage_config_nvs.h"
 #include "wifi_config.h"
 
@@ -60,7 +62,7 @@ void ensureWifiPins() {
 #endif
 
   s_pinsReady = true;
-  Serial.println("[NET] Wi-Fi SDIO piny nastaveny (Tab5 C6)");
+  APP_SLOG_LN("[NET] Wi-Fi SDIO piny nastaveny (Tab5 C6)");
 }
 
 bool compileTimeWifiOk() {
@@ -140,7 +142,7 @@ void startConnect() {
   s_ssid[sizeof(s_ssid) - 1] = '\0';
   strncpy(s_ip, "---", sizeof(s_ip));
 
-  Serial.printf("[NET] Wi-Fi pripojuji k '%s'\n", s_credSsid);
+  APP_SLOG("[NET] Wi-Fi pripojuji k '%s'\n", s_credSsid);
   const bool ok = WiFi.begin(s_credSsid, s_credPass);
   if (!ok) {
     Serial.println("[NET] Wi-Fi begin() FAIL (esp_hosted?)");
@@ -166,7 +168,7 @@ void netWifiInit() {
   // Po migraci NVS často zůstalo wifi_en=0 — s wifi_config.h vždy zapnout.
   if (hasCompile) {
     s_enabled = true;
-    Serial.println("[NET] Wi-Fi ON (wifi_config.h)");
+    APP_SLOG_LN("[NET] Wi-Fi ON (wifi_config.h)");
   } else if (!storageWifiEnabledIsSet()) {
     s_enabled = false;
   } else {
@@ -182,7 +184,7 @@ void netWifiInit() {
     if (!storageLoadWifiCredentials(nvsSsid, sizeof(nvsSsid), nvsPass,
                                     sizeof(nvsPass))) {
       storageSaveWifiCredentials(s_credSsid, s_credPass);
-      Serial.println("[NET] Wi-Fi hesla ulozena do NVS (seed)");
+      APP_SLOG_LN("[NET] Wi-Fi hesla ulozena do NVS (seed)");
     }
   }
 

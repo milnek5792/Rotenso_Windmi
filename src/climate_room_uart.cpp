@@ -1,6 +1,8 @@
 // climate_room_uart.cpp — UART z ESP32-H2 (SwitchBot bridge)
 #include "climate_room_uart.h"
 
+#include "app_serial_trace.h"
+
 #include "ble_config.h"
 #include "climate_energy.h"
 #include "net_wifi_mgr.h"
@@ -141,7 +143,7 @@ void sendCmd(const char* cmd) {
   }
   RoomSerial.print(cmd);
   RoomSerial.print('\n');
-  Serial.printf("[ROOM] -> %s\n", cmd);
+  APP_SLOG("[ROOM] -> %s\n", cmd);
 }
 
 void maybeSyncBridgeWifiChannel(void) {
@@ -217,7 +219,7 @@ void applyRoomReading(float t, float h, int batt, int rssi) {
 
   uiEez.sig_ble = true;
   uiEez.teplota_vnitrni = t;
-  Serial.printf("[ROOM] H2 T=%.1f H=%.1f bat=%d rssi=%d\n", t, h, batt, rssi);
+  APP_SLOG("[ROOM] H2 T=%.1f H=%.1f bat=%d rssi=%d\n", t, h, batt, rssi);
 }
 
 void handleFoundLine(const char* line) {
@@ -257,7 +259,7 @@ void handleCfgLine(const char* line) {
   // CFG ROOM=...
   const char* room = strstr(line, "ROOM=");
   char mac[H2_MAC_STR_LEN];
-  Serial.printf("[ROOM] H2 %s\n", line);
+  APP_SLOG("[ROOM] H2 %s\n", line);
   if (room) {
     copyMacToken(room + 5, mac, sizeof(mac));
     if (!isZeroMac(mac) && looksLikeMac(mac)) {
@@ -356,7 +358,7 @@ void handleBridgeInfoLine(const char* line) {
     }
   }
   portEXIT_CRITICAL(&s_mux);
-  Serial.printf(
+  APP_SLOG(
       "[ROOM] bridge INFO mac=%s ch=%u espnow=%u rx=%u pilots=%u "
       "pilot_age=%us pwr_age=%us rssi=%d pzem=%u live=%u\n",
       s_bridgeMac, (unsigned)s_bridgeCh, s_bridgeEspNow ? 1u : 0u, rx, pilots,
@@ -373,20 +375,20 @@ void handleBridgeWifiLine(const char* line) {
       s_bridgeOtaState = CLIMATE_BRIDGE_OTA_CONNECTING;
       s_bridgeOtaIp[0] = '\0';
       s_bridgeOtaHost[0] = '\0';
-      Serial.println("[ROOM] bridge WiFi connecting");
+      APP_SLOG_LN("[ROOM] bridge WiFi connecting");
       return;
     }
     if (strncmp(p, "IP=", 3) == 0) {
       strncpy(s_bridgeOtaIp, p + 3, sizeof(s_bridgeOtaIp) - 1);
       s_bridgeOtaIp[sizeof(s_bridgeOtaIp) - 1] = '\0';
-      Serial.printf("[ROOM] bridge IP %s\n", s_bridgeOtaIp);
+      APP_SLOG("[ROOM] bridge IP %s\n", s_bridgeOtaIp);
       return;
     }
     if (strcmp(p, "OFF") == 0) {
       s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
       s_bridgeOtaIp[0] = '\0';
       s_bridgeOtaHost[0] = '\0';
-      Serial.println("[ROOM] bridge WiFi off");
+      APP_SLOG_LN("[ROOM] bridge WiFi off");
       return;
     }
   }
@@ -414,13 +416,13 @@ void handleBridgeWifiLine(const char* line) {
         }
         s_bridgeOtaIp[i] = '\0';
       }
-      Serial.printf("[ROOM] bridge OTA ready %s %s\n", s_bridgeOtaHost,
+      APP_SLOG("[ROOM] bridge OTA ready %s %s\n", s_bridgeOtaHost,
                     s_bridgeOtaIp);
       return;
     }
     if (strncmp(p, "DONE", 4) == 0) {
       s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
-      Serial.println("[ROOM] bridge OTA done — reboot");
+      APP_SLOG_LN("[ROOM] bridge OTA done — reboot");
       return;
     }
   }
@@ -456,7 +458,7 @@ void parseLine(char* line) {
     s_bridgeLastRxAgeSec = 0;
     s_bridgeLastRssi = (int8_t)rssi;
     portEXIT_CRITICAL(&s_mux);
-    Serial.printf("[ROOM] PILOT seq=%u rssi=%d pzem_live=%u\n", seq, rssi,
+    APP_SLOG("[ROOM] PILOT seq=%u rssi=%d pzem_live=%u\n", seq, rssi,
                   pzem);
     return;
   }
@@ -520,7 +522,7 @@ void parseLine(char* line) {
   if (strncmp(line, H2_PREFIX_SCAN_DONE, strlen(H2_PREFIX_SCAN_DONE)) == 0) {
     s_scanBusy = false;
     s_scanStartedMs = 0;
-    Serial.printf("[ROOM] %s\n", line);
+    APP_SLOG("[ROOM] %s\n", line);
     return;
   }
   if (strncmp(line, H2_PREFIX_CFG, strlen(H2_PREFIX_CFG)) == 0) {
@@ -598,10 +600,10 @@ void climateRoomInit(void) {
   s_inited = true;
   s_lineLen = 0;
   refreshCfgMacCache();
-  Serial.printf("[ROOM] UART H2 RX=G%d TX=G%d @ %u\n",
+  APP_SLOG("[ROOM] UART H2 RX=G%d TX=G%d @ %u\n",
                 CLIMATE_ROOM_UART_RX_PIN, CLIMATE_ROOM_UART_TX_PIN,
                 (unsigned)CLIMATE_ROOM_UART_BAUD);
-  Serial.printf("[ROOM] cfg room=%s\n", s_cfgMac);
+  APP_SLOG("[ROOM] cfg room=%s\n", s_cfgMac);
   delay(500);
   sendCmd("GET CFG");
   delay(50);
@@ -674,7 +676,7 @@ void climateRoomRequestNow(void) {
 
 void climateRoomStartScan(void) {
   if (s_scanBusy) {
-    Serial.println("[ROOM] scan already busy");
+    APP_SLOG_LN("[ROOM] scan already busy");
     return;
   }
   portENTER_CRITICAL(&s_mux);
@@ -842,7 +844,7 @@ bool climateRoomBridgeOtaStartWith(const char* ssid, const char* pass) {
   s_bridgeOtaState = CLIMATE_BRIDGE_OTA_CONNECTING;
   s_bridgeOtaIp[0] = '\0';
   s_bridgeOtaHost[0] = '\0';
-  Serial.printf("[ROOM] bridge OTA start ssid=%s\n", ssid);
+  APP_SLOG("[ROOM] bridge OTA start ssid=%s\n", ssid);
   return true;
 }
 

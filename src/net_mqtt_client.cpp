@@ -2,6 +2,7 @@
 // Na Tab5 během reconnect suspendujeme UI + loopTask (SDIO + Core1).
 #include "net_mqtt_client.h"
 
+#include "app_serial_trace.h"
 #include "mqtt_config.h"
 #include "net_wifi_mgr.h"
 #include "net_ota.h"
@@ -38,7 +39,7 @@ namespace {
 static const char* TAG = "MQTT";
 
 void logHeap(const char* where) {
-  Serial.printf("[MQTT] heap %s: free=%u maxblk=%u dma_max=%u dma_free=%u psram=%u\n",
+  APP_SLOG("[MQTT] heap %s: free=%u maxblk=%u dma_max=%u dma_free=%u psram=%u\n",
                 where,
                 (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getMaxAllocHeap(),
@@ -67,17 +68,17 @@ class MqttSecureClient : public WiFiClientSecure {
   int connect(const char* host, uint16_t port) override {
     assumeUp = false;
     if (haveForcedIp) {
-      Serial.printf("[MQTT] TLS SNI=%s ip=%s\n", host, forcedIp.toString().c_str());
+      APP_SLOG("[MQTT] TLS SNI=%s ip=%s\n", host, forcedIp.toString().c_str());
       const uint32_t t0 = millis();
       const int rc = WiFiClientSecure::connect(
           forcedIp, port, host, (const char*)nullptr, (const char*)nullptr, (const char*)nullptr);
-      Serial.printf("[MQTT] TLS handshake %s (%lu ms)\n",
+      APP_SLOG("[MQTT] TLS handshake %s (%lu ms)\n",
                     rc ? "OK" : "FAIL", (unsigned long)(millis() - t0));
       return rc;
     }
     const uint32_t t0 = millis();
     const int rc = WiFiClientSecure::connect(host, port);
-    Serial.printf("[MQTT] TLS handshake %s (%lu ms)\n",
+    APP_SLOG("[MQTT] TLS handshake %s (%lu ms)\n",
                   rc ? "OK" : "FAIL", (unsigned long)(millis() - t0));
     return rc;
   }
@@ -87,7 +88,7 @@ class MqttSecureClient : public WiFiClientSecure {
     const uint32_t t0 = millis();
     const int rc = WiFiClientSecure::connect(
         ip, port, MQTT_HOST, (const char*)nullptr, (const char*)nullptr, (const char*)nullptr);
-    Serial.printf("[MQTT] TLS handshake %s (%lu ms)\n",
+    APP_SLOG("[MQTT] TLS handshake %s (%lu ms)\n",
                   rc ? "OK" : "FAIL", (unsigned long)(millis() - t0));
     return rc;
   }
@@ -166,7 +167,7 @@ void releaseTlsReserve(const char* why) {
   if (!s_tlsReserve) { return; }
   heap_caps_free(s_tlsReserve);
   s_tlsReserve = nullptr;
-  Serial.printf("[MQTT] TLS reserve %u KB uvolnena (%s) dma_max=%u\n",
+  APP_SLOG("[MQTT] TLS reserve %u KB uvolnena (%s) dma_max=%u\n",
                 (unsigned)(s_tlsReserveSz / 1024), why,
                 (unsigned)dmaMaxBlock());
   s_tlsReserveSz = 0;
@@ -830,7 +831,7 @@ void handleIncoming(const char* topic, int topicLen, const char* data, int dataL
   }
   msg[n] = '\0';
   trimInPlace(msg);
-  Serial.printf("[MQTT] RX %.*s = [%s]\n", topicLen, topic, msg);
+  APP_SLOG("[MQTT] RX %.*s = [%s]\n", topicLen, topic, msg);
 
   auto parseOnOffMsg = [](const char* m, bool* onOut) -> bool {
     if (!m || !onOut) {
@@ -1039,7 +1040,7 @@ void suspendCore1ForMqtt() {
   s_connected = false;
   s_asyncSuspended = nullptr;
   netSdioSetTlsBusy(true);
-  Serial.println("[MQTT] tlsBusy — cekam az loop opusti M5.update");
+  APP_SLOG_LN("[MQTT] tlsBusy — cekam az loop opusti M5.update");
   Serial.flush();
   vTaskDelay(pdMS_TO_TICKS(400));
 
@@ -1056,7 +1057,7 @@ void suspendCore1ForMqtt() {
     s_displayHeldForTls = true;
   }
   vTaskDelay(pdMS_TO_TICKS(100));
-  Serial.println("[MQTT] core1 parked (UI+display, loop bezi)");
+  APP_SLOG_LN("[MQTT] core1 parked (UI+display, loop bezi)");
   Serial.flush();
 }
 
@@ -1090,7 +1091,7 @@ void hardStopMqttSocket(const char* why) {
   s_connected = false;
   s_mqtt.disconnect();
   s_tls.stop();
-  Serial.printf("[MQTT] hard stop (%s) state=%d\n", why, s_mqtt.state());
+  APP_SLOG("[MQTT] hard stop (%s) state=%d\n", why, s_mqtt.state());
 }
 
 /** Pád živé session — zruš i watch (oko / rychlé tele). */
@@ -1125,7 +1126,7 @@ bool subscribeAll() {
     }
     vTaskDelay(pdMS_TO_TICKS(100));
     s_mqtt.loop();
-    Serial.printf("[MQTT] SUB %s\n", kTopics[i]);
+    APP_SLOG("[MQTT] SUB %s\n", kTopics[i]);
   }
   return true;
 }
@@ -1134,7 +1135,7 @@ bool subscribeAll() {
 bool reconnectMqttLocked() {
   fillHostDisplay();
   fillClientId();
-  Serial.printf("[MQTT] clientId=%s\n", s_clientId);
+  APP_SLOG("[MQTT] clientId=%s\n", s_clientId);
 
   if (!netSdioCanMqtt()) {
     setStatus("Čekám na UI...");
@@ -1143,7 +1144,7 @@ bool reconnectMqttLocked() {
 
   if (!timeOkForTls()) {
     setStatus("Čekám na čas/NTP");
-    Serial.println("[MQTT] TLS potrebuje platny cas (NTP/RTC)");
+    APP_SLOG_LN("[MQTT] TLS potrebuje platny cas (NTP/RTC)");
     return false;
   }
   if (!netWifiIsConnected()) {
@@ -1163,7 +1164,7 @@ bool reconnectMqttLocked() {
     resumeCore1AfterMqtt();
     return false;
   }
-  Serial.printf("[MQTT] DNS IPv4 %s -> %s\n", MQTT_HOST, ip.toString().c_str());
+  APP_SLOG("[MQTT] DNS IPv4 %s -> %s\n", MQTT_HOST, ip.toString().c_str());
   s_tls.forcedIp = ip;
   s_tls.haveForcedIp = true;
 
@@ -1186,7 +1187,7 @@ bool reconnectMqttLocked() {
     const char* alpnProtocols[] = {"mqtt", nullptr};
     s_tls.setAlpnProtocols(alpnProtocols);
   }
-  Serial.println("[MQTT] TLS sifrovane, bez overeni certifikatu");
+  APP_SLOG_LN("[MQTT] TLS sifrovane, bez overeni certifikatu");
   // Handshake max 30 s; read/available krátký timeout — jinak available() blokuje celé sekundy
   s_tls.setHandshakeTimeout(30);
   s_tls.setTimeout(1000);
@@ -1199,7 +1200,7 @@ bool reconnectMqttLocked() {
   s_mqtt.setSocketTimeout(MQTT_SOCKET_TIMEOUT_S);
 
   setStatus("Připojování...");
-  Serial.printf("[MQTT] Pripojuji k EMQX (timeout=%ds)...", MQTT_SOCKET_TIMEOUT_S);
+  APP_SLOG("[MQTT] Pripojuji k EMQX (timeout=%ds)...", MQTT_SOCKET_TIMEOUT_S);
   logHeap("pred connect");
   vTaskDelay(pdMS_TO_TICKS(200));
 
@@ -1224,7 +1225,7 @@ bool reconnectMqttLocked() {
     return false;
   }
 
-  Serial.println(" OK");
+  APP_SLOG_LN(" OK");
   // Teprve teď smí connected() vracet 1 (subscribe/publish/loop)
   s_tls.assumeUp = true;
   s_connected = true;
@@ -1264,13 +1265,13 @@ bool reconnectMqttLocked() {
 
   // Drž LVGL freeze — plný unfreeze shazuje TLS. Touch může freeze zrušit dotykem.
   resumeCore1SoftAfterMqtt(8000);
-  Serial.println("[MQTT] UI soft-resume (LVGL freeze 8s, touch=clear)");
+  APP_SLOG_LN("[MQTT] UI soft-resume (LVGL freeze 8s, touch=clear)");
   Serial.flush();
   return true;
 }
 
 void mqttWorker(void* /*arg*/) {
-  Serial.println("[MQTT] worker start (PubSubClient, FVE-style)");
+  APP_SLOG_LN("[MQTT] worker start (PubSubClient, FVE-style)");
   bool bootReady = false;
   bool bootConnectSent = false;
   uint32_t bootReadyMs = 0;
@@ -1280,13 +1281,13 @@ void mqttWorker(void* /*arg*/) {
       bootReady = true;
       bootReadyMs = millis();
       s_wantConnect = true;
-      Serial.println("[MQTT] boot: WiFi+NTP OK — cekam 3s pred connect");
+      APP_SLOG_LN("[MQTT] boot: WiFi+NTP OK — cekam 3s pred connect");
       setStatus("Připojování...");
     }
     if (bootReady && !bootConnectSent && (millis() - bootReadyMs >= 3000)) {
       bootConnectSent = true;
       s_requestConnect = true;
-      Serial.println("[MQTT] boot: pripojuji");
+      APP_SLOG_LN("[MQTT] boot: pripojuji");
     }
 
     if (s_requestDisconnect) {
@@ -1347,7 +1348,7 @@ void mqttWorker(void* /*arg*/) {
                 s_lastReconnectMs = now;
               }
             } else {
-              Serial.printf("[MQTT] transient state=%d (grace)\n", s_mqtt.state());
+              APP_SLOG("[MQTT] transient state=%d (grace)\n", s_mqtt.state());
             }
           } else {
             s_linkFailStreak = 0;
@@ -1373,7 +1374,7 @@ void mqttWorker(void* /*arg*/) {
           } else {
           s_lastReconnectMs = now;
           setStatus("Připojování...");
-          Serial.printf("[MQTT] reconnect (backoff %lu ms)...\n",
+          APP_SLOG("[MQTT] reconnect (backoff %lu ms)...\n",
                         (unsigned long)s_reconnectBackoffMs);
           if (reconnectMqttLocked()) {
             s_reconnectBackoffMs = 15000;
@@ -1408,7 +1409,7 @@ void netMqttReserveTlsMemory() {
     if (p) {
       s_tlsReserve = p;
       s_tlsReserveSz = n;
-      Serial.printf("[MQTT] TLS reserve %u KB: OK (dma_max=%u)\n",
+      APP_SLOG("[MQTT] TLS reserve %u KB: OK (dma_max=%u)\n",
                     (unsigned)(n / 1024), (unsigned)dmaMaxBlock());
       return;
     }
@@ -1441,11 +1442,11 @@ void netMqttInit() {
       s_task = xTaskCreateStaticPinnedToCore(
           mqttWorker, "mqtt_w", kStackWords, nullptr, 1,
           s_stack, &s_tcb, 0);
-      Serial.println("[MQTT] worker: static INTERNAL stack (PubSubClient)");
+      APP_SLOG_LN("[MQTT] worker: static INTERNAL stack (PubSubClient)");
     } else {
       xTaskCreatePinnedToCore(
           mqttWorker, "mqtt_w", 32768, nullptr, 1, &s_task, 0);
-      Serial.println("[MQTT] worker: fallback xTaskCreate");
+      APP_SLOG_LN("[MQTT] worker: fallback xTaskCreate");
     }
   }
   logHeap("init");
@@ -1469,7 +1470,7 @@ bool netMqttIsEnabled() { return s_enabled; }
 void netMqttConnect() {
   if (!netWifiIsEnabled() || !netWifiIsConnected()) {
     setStatus("Nejdřív Wi-Fi");
-    Serial.println("[MQTT] nejdriv Wi-Fi");
+    APP_SLOG_LN("[MQTT] nejdriv Wi-Fi");
     return;
   }
   s_enabled = true;

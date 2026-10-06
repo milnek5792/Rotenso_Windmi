@@ -1,6 +1,7 @@
 // climate_energy.cpp — ΔEnergy z PZEM + el. topení (3 kW) + historie
 #include "climate_energy.h"
 
+#include "app_serial_trace.h"
 #include "net_ota.h"
 #include "net_wifi_mgr.h"
 #include "storage_config_nvs.h"
@@ -580,7 +581,7 @@ void climateEnergyInit(void) {
     }
   }
   s_histGen++;
-  Serial.printf(
+  APP_SLOG(
       "[ENERGY] init meta=%d e_prev=%lu Wh season=%ld week_nz=%lu day0_nz=%lu\n",
       metaOk ? 1 : 0, (unsigned long)s_meta.e_prev_wh,
       (long)s_meta.season_year, (unsigned long)nz, (unsigned long)day0Nz);

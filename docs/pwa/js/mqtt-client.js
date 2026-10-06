@@ -4,25 +4,12 @@
 const HYDRATE_SKIP_RETAINED = new Set(['tele/alarm', 'tele/porucha']);
 const TELE_NA = '___';
 
-const TELE_SUFFIXES = [
-  'availability',
-  'tele/temp_room',
-  'tele/temp_outdoor',
-  'tele/temp_inlet',
-  'tele/temp_outlet',
-  'tele/temp_set',
-  'tele/reg_mode',
-  'tele/eq_offset',
-  'tele/power',
-  'tele/pump',
-  'tele/compressor',
-  'tele/lin',
-  'tele/defrost',
-  'tele/elec_heat',
-  'tele/alarm',
-  'tele/porucha',
-  'tele/watch',
-];
+/**
+ * Málo subscriptions — EMQX Serverless má nízký limit (~10/client).
+ * Individuální tele/* topiců je víc než limit → compressor/defrost se
+ * neodebíraly. Wildcard tele/# + availability = 2 odběry.
+ */
+const SUBSCRIBE_FILTERS = ['availability', 'tele/#'];
 
 export class MqttBridge {
   constructor(onState) {
@@ -172,7 +159,7 @@ export class MqttBridge {
     if (!this.client?.connected) {
       return;
     }
-    for (const suffix of TELE_SUFFIXES) {
+    for (const suffix of SUBSCRIBE_FILTERS) {
       this.client.subscribe(this.topic(suffix), { qos: 0 });
     }
   }
@@ -290,6 +277,9 @@ export class MqttBridge {
         break;
       case 'tele/compressor':
         patch.compressor = parseOnOff(msg);
+        if (typeof console !== 'undefined') {
+          console.debug('[PWA] compressor', msg, '→', patch.compressor);
+        }
         break;
       case 'tele/lin':
         patch.lin = parseOnOff(msg);
@@ -333,7 +323,16 @@ function normalizeRegMode(v) {
 
 function parseOnOff(v) {
   const s = String(v).trim().toUpperCase();
-  return s === 'ON' || s === '1' || s === 'TRUE' || s === 'START';
+  if (!s || s === 'OFF' || s === '0' || s === 'FALSE' || s === 'STOP' ||
+      s === TELE_NA || s === '---') {
+    return false;
+  }
+  if (s === 'ON' || s === '1' || s === 'TRUE' || s === 'START' || s === 'YES') {
+    return true;
+  }
+  // Číselná frekvence (Hz) — kompresor běží
+  const n = Number.parseFloat(s);
+  return Number.isFinite(n) && n > 0;
 }
 
 function parseTemp(v) {

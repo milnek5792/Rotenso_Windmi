@@ -1,4 +1,4 @@
-const CACHE = 'windmi-pwa-w2-v2';
+const CACHE = 'windmi-pwa-w2-v9';
 const ASSETS = [
   './',
   './index.html',

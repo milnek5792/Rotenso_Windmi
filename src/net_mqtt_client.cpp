@@ -139,17 +139,19 @@ struct TeleSnap {
   int8_t power = -1;
   int8_t pump = -1;
   int8_t compressor = -1;
+  int8_t defrost = -1;
+  int8_t elec = -1;
   int8_t lin = -1;
   int8_t alarm = -1;
   int8_t quiet = -1;
   int8_t regMode = -1;
+  float eqOffset = -999.0f;
 };
 
 TeleSnap s_pub{};
 char s_pubPorucha[sizeof(uiEez.porucha_text)] = "";
 int8_t s_watchPub = -1;
 bool s_compTest = (MQTT_COMPRESSOR_FORCE_ON != 0);
-uint32_t s_compLastPubMs = 0;
 
 #if MQTT_TELE_REQUIRE_WATCH
 bool s_watchOn = false;
@@ -318,24 +320,77 @@ struct TeleModelSnap {
   int8_t power;
   int8_t pump;
   int8_t comp;
+  int8_t defrost;
+  int8_t elec;
 };
 
 bool snapCompressorOn(uint8_t* b2Out, uint8_t* b3Out);
 
+/** LED tele — bus/live frekvence (stejný zdroj jako UI), ne jen uiEez cache. */
 void snapTeleFromModel(TeleModelSnap* out) {
   if (!out) {
     return;
   }
   LgModelUiSnap bus{};
   lgModelReadUiSnap(&bus);
-  const bool linLive = bus.lin_live;
-  const uint8_t b2 = bus.b2;
-  out->lin = linLive ? 1 : 0;
-  out->power = (bus.cilovy_zapnuto || bus.cekame_orig || bus.tc_pozadavek) ? 1 : 0;
-  out->pump = (linLive && lgJeCerpadloZap(b2)) ? 1 : 0;
-  uint8_t b2c = 0;
-  uint8_t b3c = 0;
-  out->comp = snapCompressorOn(&b2c, &b3c) ? 1 : 0;
+  WindmiLiveSnap live{};
+  lgModelReadLiveSnap(&live);
+
+  out->lin = bus.lin_live ? 1 : 0;
+  out->power = uiEez.sig_chod ? 1 : 0;
+  out->pump = (bus.lin_live && lgJeCerpadloZap(bus.b2)) ? 1 : 0;
+  if (!out->pump && uiEez.sig_cerpadlo) {
+    out->pump = 1;
+  }
+
+  // Kompresor: frekvence z Modbus NEBO syntetické B3 (jako UI LED)
+  const bool compHz = live.valid && (live.comp_freq_x10 > 0);
+  const bool compB3 = bus.lin_live && lgJeKompresorBezi(bus.b3);
+  out->comp = (compHz || compB3 || uiEez.sig_kompresor) ? 1 : 0;
+  if (s_compTest || MQTT_COMPRESSOR_FORCE_ON) {
+    out->comp = 1;
+  }
+
+  out->defrost =
+      ((bus.lin_live && ((bus.b3 & 0x04) != 0)) || uiEez.sig_odmrazovani) ? 1
+                                                                          : 0;
+  out->elec =
+      ((bus.lin_live && lgJeElTopeni(bus.b2)) || uiEez.sig_el_topeni) ? 1 : 0;
+}
+
+/** Publikuj LED topic; s_pub aktualizuj jen při úspěchu (jinak se zasekne OFF). */
+bool publishLedStr(const char* topic, int8_t* pubSlot, int8_t want) {
+  if (!topic || !pubSlot) {
+    return false;
+  }
+  if (!mqttPublishRetain(topic, want ? "ON" : "OFF")) {
+    return false;
+  }
+  *pubSlot = want;
+  return true;
+}
+
+void publishLedSignals(bool force) {
+  TeleModelSnap t{};
+  snapTeleFromModel(&t);
+  if (force || t.lin != s_pub.lin) {
+    publishLedStr(MQTT_TOPIC_TELE_LIN, &s_pub.lin, t.lin);
+  }
+  if (force || t.power != s_pub.power) {
+    publishLedStr(MQTT_TOPIC_TELE_POWER, &s_pub.power, t.power);
+  }
+  if (force || t.pump != s_pub.pump) {
+    publishLedStr(MQTT_TOPIC_TELE_PUMP, &s_pub.pump, t.pump);
+  }
+  if (force || t.comp != s_pub.compressor) {
+    publishLedStr(MQTT_TOPIC_TELE_COMPRESSOR, &s_pub.compressor, t.comp);
+  }
+  if (force || t.defrost != s_pub.defrost) {
+    publishLedStr(MQTT_TOPIC_TELE_DEFROST, &s_pub.defrost, t.defrost);
+  }
+  if (force || t.elec != s_pub.elec) {
+    publishLedStr(MQTT_TOPIC_TELE_ELEC_HEAT, &s_pub.elec, t.elec);
+  }
 }
 
 void publishTeleOfflineMarkers() {
@@ -347,13 +402,9 @@ void publishTeleOfflineMarkers() {
   mqttPublishRetain(MQTT_TOPIC_TELE_LIN, "OFF");
   mqttPublishRetain(MQTT_TOPIC_TELE_POWER, "OFF");
   mqttPublishRetain(MQTT_TOPIC_TELE_PUMP, "OFF");
-  if (s_compTest || MQTT_COMPRESSOR_FORCE_ON) {
-    mqttPublishRetain(MQTT_TOPIC_TELE_COMPRESSOR, "ON");
-    s_pub.compressor = 1;
-  } else {
-    mqttPublishRetain(MQTT_TOPIC_TELE_COMPRESSOR, "OFF");
-    s_pub.compressor = 0;
-  }
+  mqttPublishRetain(MQTT_TOPIC_TELE_COMPRESSOR, "OFF");
+  mqttPublishRetain(MQTT_TOPIC_TELE_DEFROST, "OFF");
+  mqttPublishRetain(MQTT_TOPIC_TELE_ELEC_HEAT, "OFF");
   mqttPublishRetain(MQTT_TOPIC_TELE_ALARM, "OFF");
   mqttPublishRetain(MQTT_TOPIC_TELE_PORUCHA, "");
   s_pubPorucha[0] = '\0';
@@ -364,12 +415,14 @@ void publishTeleOfflineMarkers() {
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_ROOM, MQTT_TELE_NA);
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_SET, MQTT_TELE_NA);
   mqttPublishRetain(MQTT_TOPIC_TELE_REG_MODE, MQTT_TELE_NA);
-  const int8_t keepComp = s_pub.compressor;
+  mqttPublishRetain(MQTT_TOPIC_TELE_EQ_OFFSET, MQTT_TELE_NA);
   s_pub = TeleSnap{};
   s_pub.lin = 0;
   s_pub.power = 0;
   s_pub.pump = 0;
-  s_pub.compressor = keepComp;
+  s_pub.compressor = 0;
+  s_pub.defrost = 0;
+  s_pub.elec = 0;
   s_pub.alarm = 0;
 }
 
@@ -406,6 +459,9 @@ void bumpWatch(uint32_t holdMs = MQTT_WATCH_IDLE_MS) {
   publishWatchState(true);
   if (!was) {
     startTeleStaggered();
+  } else {
+    // Watch už běžel — stejně znovu pošli LED (retained mohlo zůstat OFF).
+    publishLedSignals(true);
   }
 }
 
@@ -467,6 +523,14 @@ void publishRegMode(void) {
   s_pub.regMode = mqttRegModeCode();
 }
 
+void publishEqOffset(void) {
+  const float off = climateRegulatorGetConfig()->offset_c;
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%+.0f", (double)off);
+  publishStr(MQTT_TOPIC_TELE_EQ_OFFSET, buf);
+  s_pub.eqOffset = off;
+}
+
 void publishSetpoint(void) {
   float setp = UI_TEPLOTA_NEPLATNA;
   snapMqttSetpoint(&setp);
@@ -477,23 +541,21 @@ void publishSetpoint(void) {
 }
 
 bool snapCompressorOn(uint8_t* b2Out, uint8_t* b3Out) {
-  lgModelLock();
-  const bool maA0 = lgMaCerstoA0();
-  const uint8_t b2 = lgModelA0Bajt(2);
-  const uint8_t b3 = lgModelA0Bajt(3);
-  lgModelUnlock();
+  LgModelUiSnap bus{};
+  lgModelReadUiSnap(&bus);
   if (b2Out) {
-    *b2Out = b2;
+    *b2Out = bus.b2;
   }
   if (b3Out) {
-    *b3Out = b3;
+    *b3Out = bus.b3;
   }
   if (s_compTest || MQTT_COMPRESSOR_FORCE_ON) {
     return true;
   }
-  return uiEez.sig_kompresor || (maA0 && lgJeKompresorBezi(b3));
+  return uiEez.sig_kompresor;
 }
 
+/** Jen pro cmd/compressor test — běžná telemetrie jde přes publishStr jako pump. */
 void publishCompressor(bool on) {
 #if MQTT_COMPRESSOR_FORCE_ON
   on = true;
@@ -503,9 +565,7 @@ void publishCompressor(bool on) {
     on = true;
   }
 #endif
-  mqttPublishRetain(MQTT_TOPIC_TELE_COMPRESSOR, on ? "ON" : "OFF");
-  s_pub.compressor = on ? 1 : 0;
-  s_compLastPubMs = millis();
+  publishLedStr(MQTT_TOPIC_TELE_COMPRESSOR, &s_pub.compressor, on ? 1 : 0);
 }
 
 void publishOutlet(float v) {
@@ -524,27 +584,25 @@ void publishTeleOne(int idx) {
     case 0: {
       TeleModelSnap t{};
       snapTeleFromModel(&t);
-      publishStr(MQTT_TOPIC_TELE_LIN, t.lin ? "ON" : "OFF");
-      s_pub.lin = t.lin;
+      publishLedStr(MQTT_TOPIC_TELE_LIN, &s_pub.lin, t.lin);
       break;
     }
     case 1: {
       TeleModelSnap t{};
       snapTeleFromModel(&t);
-      publishStr(MQTT_TOPIC_TELE_POWER, t.power ? "ON" : "OFF");
-      s_pub.power = t.power;
+      publishLedStr(MQTT_TOPIC_TELE_POWER, &s_pub.power, t.power);
       break;
     }
     case 2: {
       TeleModelSnap t{};
       snapTeleFromModel(&t);
-      publishStr(MQTT_TOPIC_TELE_PUMP, t.pump ? "ON" : "OFF");
-      s_pub.pump = t.pump;
+      publishLedStr(MQTT_TOPIC_TELE_PUMP, &s_pub.pump, t.pump);
       break;
     }
     case 3: {
-      uint8_t b2 = 0, b3 = 0;
-      publishCompressor(snapCompressorOn(&b2, &b3));
+      TeleModelSnap t{};
+      snapTeleFromModel(&t);
+      publishLedStr(MQTT_TOPIC_TELE_COMPRESSOR, &s_pub.compressor, t.comp);
       break;
     }
     case 4:
@@ -582,15 +640,30 @@ void publishTeleOne(int idx) {
       publishRegMode();
       break;
     case 11:
+      publishEqOffset();
+      break;
+    case 12:
       publishStr(MQTT_TOPIC_TELE_QUIET, uiEez.sig_tichy_lin ? "ON" : "OFF");
       s_pub.quiet = uiEez.sig_tichy_lin ? 1 : 0;
       break;
+    case 13: {
+      TeleModelSnap t{};
+      snapTeleFromModel(&t);
+      publishLedStr(MQTT_TOPIC_TELE_DEFROST, &s_pub.defrost, t.defrost);
+      break;
+    }
+    case 14: {
+      TeleModelSnap t{};
+      snapTeleFromModel(&t);
+      publishLedStr(MQTT_TOPIC_TELE_ELEC_HEAT, &s_pub.elec, t.elec);
+      break;
+    }
     default:
       break;
   }
 }
 
-static const int kTeleSyncCount = 12;
+static const int kTeleSyncCount = 15;
 
 void teleTick() {
   if (!s_mqtt.connected() || s_teleIdx < 0) {
@@ -629,28 +702,20 @@ void telePublishChanges() {
   }
   s_lastChangeCheckMs = now;
 
-  TeleModelSnap t{};
-  snapTeleFromModel(&t);
-  const bool compRefresh = (now - s_compLastPubMs) >= 3000;
-  if (t.lin != s_pub.lin) {
-    publishStr(MQTT_TOPIC_TELE_LIN, t.lin ? "ON" : "OFF");
-    s_pub.lin = t.lin;
+  // LED: při změně + periodický refresh (retained OFF po watch/fail)
+  static uint32_t s_lastLedRefreshMs = 0;
+  const bool ledRefresh =
+      (s_lastLedRefreshMs == 0) || (now - s_lastLedRefreshMs >= 3000);
+  publishLedSignals(ledRefresh);
+  if (ledRefresh) {
+    s_lastLedRefreshMs = now;
   }
-  if (t.power != s_pub.power) {
-    publishStr(MQTT_TOPIC_TELE_POWER, t.power ? "ON" : "OFF");
-    s_pub.power = t.power;
-  }
-  if (t.pump != s_pub.pump) {
-    publishStr(MQTT_TOPIC_TELE_PUMP, t.pump ? "ON" : "OFF");
-    s_pub.pump = t.pump;
-  }
-  if (t.comp != s_pub.compressor || compRefresh) {
-    publishCompressor(t.comp != 0);
-  }
+
   const int8_t al = uiEez.sig_alarm ? 1 : 0;
   if (al != s_pub.alarm) {
-    publishStr(MQTT_TOPIC_TELE_ALARM, al ? "ON" : "OFF");
-    s_pub.alarm = al;
+    if (mqttPublishRetain(MQTT_TOPIC_TELE_ALARM, al ? "ON" : "OFF")) {
+      s_pub.alarm = al;
+    }
   }
   if (strcmp(uiEez.porucha_text, s_pubPorucha) != 0) {
     strncpy(s_pubPorucha, uiEez.porucha_text, sizeof(s_pubPorucha) - 1);
@@ -659,8 +724,9 @@ void telePublishChanges() {
   }
   const int8_t q = uiEez.sig_tichy_lin ? 1 : 0;
   if (q != s_pub.quiet) {
-    publishStr(MQTT_TOPIC_TELE_QUIET, q ? "ON" : "OFF");
-    s_pub.quiet = q;
+    if (mqttPublishRetain(MQTT_TOPIC_TELE_QUIET, q ? "ON" : "OFF")) {
+      s_pub.quiet = q;
+    }
   }
 
   float inlet = UI_TEPLOTA_NEPLATNA;
@@ -672,8 +738,15 @@ void telePublishChanges() {
   const int8_t rm = mqttRegModeCode();
   if (rm != s_pub.regMode) {
     publishRegMode();
+    publishEqOffset();
     publishSetpoint();
     return;
+  }
+  {
+    const float off = climateRegulatorGetConfig()->offset_c;
+    if (!nearlyEq(off, s_pub.eqOffset)) {
+      publishEqOffset();
+    }
   }
   if (!tempOffline(outlet) && !nearlyEq(outlet, s_pub.outlet)) {
     publishOutlet(outlet);
@@ -842,11 +915,16 @@ void handleIncoming(const char* topic, int topicLen, const char* data, int dataL
   }
 
   if (topicIs(topic, topicLen, MQTT_TOPIC_CMD_MODE)) {
-    if (strcasecmp(msg, "room") == 0 || strcasecmp(msg, "auto") == 0) {
-      uiBusQueueSetRegulationAuto(true);
+    if (strcasecmp(msg, "room") == 0 || strcasecmp(msg, "auto") == 0 ||
+        strcasecmp(msg, "pokoj") == 0) {
+      uiBusQueueSetRegulationMode((uint8_t)UI_REZIM_AUTO);
+    } else if (strcasecmp(msg, "equitherm") == 0 || strcasecmp(msg, "ekv") == 0 ||
+               strcasecmp(msg, "ekviterm") == 0 || strcasecmp(msg, "ekvitermá") == 0) {
+      uiBusQueueSetRegulationMode((uint8_t)UI_REZIM_EKVITERM);
     } else if (strcasecmp(msg, "water") == 0 || strcasecmp(msg, "manual") == 0 ||
-               strcasecmp(msg, "vystupni") == 0 || strcasecmp(msg, "voda") == 0) {
-      uiBusQueueSetRegulationAuto(false);
+               strcasecmp(msg, "vystupni") == 0 || strcasecmp(msg, "voda") == 0 ||
+               strcasecmp(msg, "rucni") == 0) {
+      uiBusQueueSetRegulationMode((uint8_t)UI_REZIM_VYSTUPNI_TEPLOTA);
     }
     return;
   }

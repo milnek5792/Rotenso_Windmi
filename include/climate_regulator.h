@@ -88,9 +88,11 @@ void climateRegulatorInit(void);
 void climateRegulatorTick(void);
 void climateRegulatorRequestImmediateTick(void);
 void climateRegulatorSave(void);
-/** Odložený zápis po změně pokojového SP (HMI/MQTT) — flush v uiBusFlushDeferredStorage. */
+/** Odložený zápis reg_cfg (gainy, offset) — flash blokuje LVGL. */
 void climateRegulatorRequestSave(void);
 void climateRegulatorFlushPendingSave(void);
+/** Okamžitý zápis room_sp_x10 (např. při odchodu z MAIN). */
+void climateRegulatorFlushRoomSpNow(void);
 
 const RegulatorConfig* climateRegulatorGetConfig(void);
 RegulatorConfig* climateRegulatorGetConfigMutable(void);

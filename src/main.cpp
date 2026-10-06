@@ -16,6 +16,7 @@
 #include "app_cmd.h"
 #include "ui_bus_bindings.h"
 #include "ui_net_sync.h"
+#include "net_wifi_mgr.h"
 
 #include "src/net_mqtt_client.h"
 #include "src/net_sdio_arbiter.h"
@@ -39,7 +40,8 @@ void setup() {
 #if LG_HAS_M5UNIFIED
   auto cfg = M5.config();
   M5.begin(cfg);
-  M5.Display.setRotation(1);
+  // Landscape otočený o 180° oproti defaultu (1) — USB na druhé straně.
+  M5.Display.setRotation(3);
   M5.Touch.setHoldThresh(800);
   M5.Touch.setFlickThresh(24);
 #endif
@@ -106,9 +108,13 @@ void loop() {
 
   if (rotensoBusIsReady() || lgBusIsReady()) {
     uiBusBindingsTick();
-    uiBusFlushDeferredStorage();
   } else {
+    // I bez Modbus — fronta HMI/MQTT (včetně room SP) musí běžet.
     appCmdDrainCtrl();
+  }
+  // NVS flush ne během Wi‑Fi connect — flash erase shazuje SDIO C6.
+  if (!netWifiIsBusy()) {
+    uiBusFlushDeferredStorage();
   }
 
 #if LG_USE_EEZ_LVGL

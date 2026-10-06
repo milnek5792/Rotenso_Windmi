@@ -81,13 +81,12 @@ void netTask(void* /*arg*/) {
         }
         freezeUntilMs = 0;
       } else if (wifiBusy) {
-        if (!uiLvglIsFrozen() && freezeUntilMs == 0) {
-          freezeUntilMs = now + 3500;
-          uiLvglSetFrozen(true);
-          ESP_LOGI(TAG, "LVGL freeze (Wi-Fi)");
-        } else if (uiLvglIsFrozen() && now >= freezeUntilMs && !mqttBusy) {
+        // Nepřekreslovat freeze při Wi‑Fi connect — jinak nejde menu / přepínání
+        // obrazovek (touch běží, ale flush se zahazuje). NVS flush už je gated
+        // v main loop přes netWifiIsBusy().
+        freezeUntilMs = 0;
+        if (uiLvglIsFrozen() && !mqttBusy) {
           uiLvglSetFrozen(false);
-          ESP_LOGI(TAG, "LVGL unfreeze");
         }
       } else if (!mqttBusy) {
         freezeUntilMs = 0;

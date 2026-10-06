@@ -207,7 +207,7 @@ void uiEezPoruchaInit(void) {
 
   s_lblTitle = lv_label_create(s_panel);
   lv_obj_set_pos(s_lblTitle, 4, 0);
-  lv_obj_set_style_text_font(s_lblTitle, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(s_lblTitle, &ui_font_font_cs_28, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(s_lblTitle, lv_color_hex(kColTitle), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_label_set_text_static(s_lblTitle, "Poruchové hlášení");
 

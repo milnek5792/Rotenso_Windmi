@@ -41,7 +41,7 @@ constexpr int kTitleY = 6;
 constexpr int kBodyY = 44;
 
 const lv_font_t* kFont = &ui_font_font_cs_24;
-const lv_font_t* kFontTitle = &ui_font_font_cs_24;
+const lv_font_t* kFontTitle = &ui_font_font_cs_28;
 
 void setLabelIfChanged(lv_obj_t* lbl, const char* text) {
   if (!lbl || !text) {

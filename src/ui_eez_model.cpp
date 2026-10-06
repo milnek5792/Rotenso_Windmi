@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <math.h>
+#include <math.h>
 
 UiEezModel uiEez;
 

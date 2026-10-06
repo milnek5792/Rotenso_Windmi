@@ -34,7 +34,7 @@ constexpr int kBtnH = 40;
 constexpr int kPad = 8;
 
 const lv_font_t* kFont = &ui_font_font_cs_24;
-const lv_font_t* kFontTitle = &ui_font_font_cs_24;
+const lv_font_t* kFontTitle = &ui_font_font_cs_28;
 bool s_created = false;
 bool s_dirty = false;
 

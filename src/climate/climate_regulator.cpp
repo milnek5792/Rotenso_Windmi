@@ -39,6 +39,10 @@ float s_lastError = 0.0f;
 bool s_havePrev = false;
 bool s_eco = false;
 bool s_cfgSavePending = false;
+uint32_t s_cfgSaveRequestMs = 0;
+bool s_roomSpSavePending = false;
+uint32_t s_roomSpSaveRequestMs = 0;
+constexpr uint32_t kNvsIdleBeforeFlushMs = 1500;
 bool s_haveEqBase = false;
 uint8_t s_lastWrittenC = 0;
 bool s_haveWritten = false;
@@ -280,18 +284,32 @@ float climateRegulatorEquithermWaterAt(float outdoorC) {
 void climateRegulatorInit(void) {
   climateRegulatorSetDefaults(&s_cfg);
   if (!storageLoadRegulatorConfig(&s_cfg)) {
-    ESP_LOGW(TAG, "NVS reg_cfg chybi — vychozi gainy");
     climateRegulatorSetDefaults(&s_cfg);
-    climateRegulatorSave();
+    if (!storageRegulatorConfigKeyExists()) {
+      ESP_LOGW(TAG, "NVS reg_cfg chybi — ukladam vychozi");
+      climateRegulatorSave();
+    } else {
+      ESP_LOGW(TAG, "NVS reg_cfg load FAIL — vychozi v RAM, NVS beze zmeny");
+    }
   } else {
     ESP_LOGI(TAG,
-             "NVS reg_cfg OK Kp=%.1f Ki=%.2f Kd=%.1f voda %.0f/%.0f offset=%+.0f",
-             (double)s_cfg.kp, (double)s_cfg.ki, (double)s_cfg.kd,
+             "NVS reg_cfg OK room_sp=%.1f Kp=%.1f Ki=%.2f voda %.0f/%.0f offset=%+.0f",
+             (double)s_cfg.room_sp_c, (double)s_cfg.kp, (double)s_cfg.ki,
              (double)s_cfg.t_water_cold_c, (double)s_cfg.t_water_warm_c,
              (double)s_cfg.offset_c);
     migrateToEquithermGains();
   }
-  s_cfg.room_sp_c = clampf(s_cfg.room_sp_c, 18.0f, 24.0f);
+  // Desetiny SP: samostatný int klíč má prioritu před float v blobu.
+  {
+    int16_t tenths = 0;
+    if (storageLoadRoomSpTenths(&tenths)) {
+      s_cfg.room_sp_c = static_cast<float>(tenths) / 10.0f;
+      ESP_LOGI(TAG, "NVS room_sp_x10=%d -> %.1f", (int)tenths,
+               (double)s_cfg.room_sp_c);
+    }
+  }
+  s_cfg.room_sp_c = roundf(clampf(s_cfg.room_sp_c, 18.0f, 24.0f) * 2.0f) / 2.0f;
+  // room_sp_x10 upgrade ne při bootu — NVS zápis shazuje Tab5 Wi‑Fi (SDIO).
   s_cfg.t_water_cold_c =
       clampf(s_cfg.t_water_cold_c, kOutMin, kOutMax);
   s_cfg.t_water_warm_c =
@@ -320,19 +338,43 @@ void climateRegulatorInit(void) {
 
 void climateRegulatorSave(void) {
   storageSaveRegulatorConfig(&s_cfg);
+  const int16_t tenths =
+      static_cast<int16_t>(lroundf(s_cfg.room_sp_c * 10.0f));
+  storageSaveRoomSpTenths(tenths);
   s_cfgSavePending = false;
-  ESP_LOGI(TAG, "NVS reg_cfg ulozeno Kp=%.1f Ki=%.2f", (double)s_cfg.kp,
+  s_roomSpSavePending = false;
+  ESP_LOGI(TAG, "NVS reg_cfg ulozeno room_sp=%.1f (x10=%d) Kp=%.1f Ki=%.2f",
+           (double)s_cfg.room_sp_c, (int)tenths, (double)s_cfg.kp,
            (double)s_cfg.ki);
 }
 
 void climateRegulatorRequestSave(void) {
   s_cfgSavePending = true;
+  s_cfgSaveRequestMs = millis();
+}
+
+void climateRegulatorFlushRoomSpNow(void) {
+  if (!s_roomSpSavePending) {
+    return;
+  }
+  const int16_t tenths =
+      static_cast<int16_t>(lroundf(s_cfg.room_sp_c * 10.0f));
+  storageSaveRoomSpTenths(tenths);
+  s_roomSpSavePending = false;
 }
 
 void climateRegulatorFlushPendingSave(void) {
-  if (s_cfgSavePending) {
-    climateRegulatorSave();
+  const uint32_t now = millis();
+  if (s_roomSpSavePending &&
+      (now - s_roomSpSaveRequestMs) >= kNvsIdleBeforeFlushMs) {
+    climateRegulatorFlushRoomSpNow();
+  }
+  if (s_cfgSavePending && (now - s_cfgSaveRequestMs) >= kNvsIdleBeforeFlushMs) {
+    storageSaveRegulatorConfig(&s_cfg);
     s_cfgSavePending = false;
+    if (s_roomSpSavePending) {
+      climateRegulatorFlushRoomSpNow();
+    }
   }
 }
 
@@ -347,7 +389,8 @@ void climateRegulatorAdjustRoomSp(float deltaC) {
 void climateRegulatorSetRoomSp(float c) {
   c = roundf(c * 2.0f) / 2.0f;
   s_cfg.room_sp_c = clampf(c, 18.0f, 24.0f);
-  climateRegulatorRequestSave();
+  s_roomSpSavePending = true;
+  s_roomSpSaveRequestMs = millis();
   climateRegulatorRequestImmediateTick();
 }
 

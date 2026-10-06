@@ -29,11 +29,16 @@ void storageSaveBrightness(uint8_t percent);
 uint32_t storageLoadSleepTimeoutSec(void);
 void storageSaveSleepTimeoutSec(uint32_t sec);
 
+bool storagePlanConfigKeyExists(void);
 bool storageLoadPlanConfig(PlanTydenConfig* cfg);
 void storageSavePlanConfig(const PlanTydenConfig* cfg);
 
 bool storageLoadRegulatorConfig(RegulatorConfig* cfg);
 void storageSaveRegulatorConfig(const RegulatorConfig* cfg);
+bool storageRegulatorConfigKeyExists(void);
+/** Room SP v desetinách °C (225 = 22.5). Spolehlivější než float v reg_cfg blobu. */
+bool storageLoadRoomSpTenths(int16_t* outTenths);
+void storageSaveRoomSpTenths(int16_t tenths);
 
 /** uiEez.rezim: 0 = auto, 1 = vystupni teplota (UiRezimRegulace). */
 bool storageLoadUiRezim(uint8_t* out);
@@ -51,15 +56,21 @@ bool storageLoadBleRoomMac(char* mac, size_t len);
 void storageSaveBleRoomMac(const char* mac);
 
 /** Blob meta spotřeby (climate_energy EnergyMeta). */
+bool storageEnergyMetaKeyExists(void);
 bool storageLoadEnergyMeta(void* dst, size_t len);
 void storageSaveEnergyMeta(const void* src, size_t len);
-/** Týdenní příkon: count = 7*1440 uint16. */
+/**
+ * Týdenní příkon v RAM: count = 7*1440 uint16.
+ * Do NVS se ukládají jen dny 0+1 (dnes+včera) — celý týden by přetekl 20 KB NVS.
+ */
 bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count);
 void storageSaveEnergyWeekPower(const uint16_t* src, size_t count);
-/** Jen jeden den (0=dnes … 6). daySamples = 1440 × uint16. */
+/** Jen jeden den (0=dnes, 1=včera). daySamples = 1440 × uint16. */
 void storageSaveEnergyWeekPowerDay(int dayIndex, const uint16_t* daySamples);
 /** Smaže meta + týdenní příkon z NVS. */
 void storageClearEnergyHistory(void);
+/** Uvolní staré en_p2..en_p6 (příliš velké pro NVS). */
+void storagePruneEnergyWeekPowerOldDays(void);
 
 #ifdef __cplusplus
 }

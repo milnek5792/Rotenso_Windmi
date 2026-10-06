@@ -32,11 +32,14 @@ void uiBusQueuePower(bool start);
 void uiBusQueueSetpointC(uint8_t teplotaC);
 void uiBusQueueAdjustSetpoint(int deltaC);
 void uiBusQueueSetRegulationAuto(bool roomMode);
+void uiBusQueueSetRegulationMode(uint8_t rezim);
 
 void uiBusBindingsTick(void);
 void uiBusFlushDeferredStorage(void);
 
 bool uiBusSetRegulationAuto(bool enable);
+/** rezim = UiRezimRegulace (0/1/2). */
+bool uiBusSetRegulationMode(uint8_t rezim);
 void uiBusPersistRezim(void);
 
 /** Zpracování ctrl zpráv z appCmdDrainCtrl (LIN / SP / power). */

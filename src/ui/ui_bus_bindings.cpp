@@ -12,9 +12,11 @@
 #include "climate_energy.h"
 #include "storage_config_nvs.h"
 #include "src/ui_eez_model.h"
+#include "ui_eez_nav.h"
 
 #include <Arduino.h>
 #include <esp_log.h>
+#include <math.h>
 #include <math.h>
 
 namespace {
@@ -398,9 +400,9 @@ void processAppMsg(const AppMsg& msg) {
       }
       break;
     case APP_CMD_SET_MODE:
-      uiBusSetRegulationAuto(msg.arg != 0);
-      ESP_LOGI(TAG, "queue → mode %s (src=%s)",
-               msg.arg ? "room" : "water", spSrcName(msg.src));
+      uiBusSetRegulationMode((uint8_t)msg.arg);
+      ESP_LOGI(TAG, "queue → mode %s (src=%s)", rezimName(uiEez.rezim),
+               spSrcName(msg.src));
       break;
     default:
       break;
@@ -508,6 +510,10 @@ void uiBusQueueSetRegulationAuto(bool roomMode) {
   appCmdEnqueueMode(roomMode, UI_SP_SRC_MQTT);
 }
 
+void uiBusQueueSetRegulationMode(uint8_t rezim) {
+  appCmdEnqueueRegMode(rezim, UI_SP_SRC_MQTT);
+}
+
 void uiBusPlanApplyStart(void) {
   provedStart();
 }
@@ -527,8 +533,22 @@ bool uiBusSessionIsOn(void) {
 }
 
 bool uiBusSetRegulationAuto(bool enable) {
-  uiEez.rezim = enable ? UI_REZIM_AUTO : UI_REZIM_VYSTUPNI_TEPLOTA;
-  uiBusPersistRezim();
+  return uiBusSetRegulationMode(enable ? (uint8_t)UI_REZIM_AUTO
+                                       : (uint8_t)UI_REZIM_VYSTUPNI_TEPLOTA);
+}
+
+bool uiBusSetRegulationMode(uint8_t rezim) {
+  if (rezim > (uint8_t)UI_REZIM_EKVITERM) {
+    return false;
+  }
+  const UiRezimRegulace prev = uiEez.rezim;
+  uiEez.rezim = (UiRezimRegulace)rezim;
+  if (prev != uiEez.rezim) {
+    uiBusPersistRezim();
+    if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
+      climateRegulatorRequestImmediateTick();
+    }
+  }
   return true;
 }
 
@@ -554,6 +574,10 @@ void uiBusFlushDeferredStorage(void) {
   s_lastFlushMs = now;
   storageFlushTcSessionPending();
   climateRegulatorFlushPendingSave();
+  // Na obrazovce plánu nepsat NVS — flash bliká LVGL; save při uiPlanFlushSave (odchod).
+  if (!uiIsPlanScreen()) {
+    climatePlanFlushPendingSave();
+  }
   uiDisplayFlushPendingStorage();
 }
 

@@ -23,7 +23,7 @@ constexpr uint32_t kColMuted = 0x8E8E93u;
 constexpr uint32_t kColAccent = 0x0A84FFu;
 constexpr uint32_t kColGreen = 0x30D158u;
 
-const lv_font_t* kFontTitle = &ui_font_font_cs_24;
+const lv_font_t* kFontTitle = &ui_font_font_cs_28;
 const lv_font_t* kFontBody = &ui_font_font_cs_24;
 
 void styleField(lv_obj_t* obj) {
@@ -170,7 +170,7 @@ void uiWifiFormCreate() {
   wifiFormObj.keyboard = lv_keyboard_create(scr);
   lv_obj_set_size(wifiFormObj.keyboard, 1280, 360);
   lv_obj_align(wifiFormObj.keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_set_style_text_font(wifiFormObj.keyboard, &lv_font_montserrat_24, LV_PART_ITEMS);
+  lv_obj_set_style_text_font(wifiFormObj.keyboard, &ui_font_font_cs_24, LV_PART_ITEMS);
   lv_obj_set_style_bg_color(wifiFormObj.keyboard, lv_color_hex(kColPanel), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_color(wifiFormObj.keyboard, lv_color_hex(0x2C2C2Eu), LV_PART_ITEMS);
   lv_obj_set_style_text_color(wifiFormObj.keyboard, lv_color_hex(kColText), LV_PART_ITEMS);

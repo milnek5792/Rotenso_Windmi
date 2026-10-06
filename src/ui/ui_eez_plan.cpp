@@ -17,6 +17,7 @@ plan_objects_t planObj;
 
 void uiPlanCloseModal(bool commit);
 void uiPlanOpenModal(uint8_t obdobi);
+void uiPlanMarkDirty(void);
 
 namespace {
 
@@ -54,6 +55,7 @@ constexpr int kModalBtnH = 52;
 constexpr int kModalBtnW = 80;
 
 const lv_font_t* kFont = &ui_font_font_cs_24;
+const lv_font_t* kFontTitle = &ui_font_font_cs_28;
 
 static bool s_planCreated = false;
 static bool s_planDirty = false;
@@ -319,7 +321,7 @@ void onCellClick(lv_event_t* e) {
   s_lastCellClickMs = now;
 
   cyklujBunku(&g_planConfig.tabulka[ref->den][ref->obdobi]);
-  s_planDirty = true;
+  uiPlanMarkDirty();
   refreshBunka(ref->den, ref->obdobi);
 }
 
@@ -350,7 +352,7 @@ void onModalAction(lv_event_t* e) {
   PlanObdobiCas* ob = &g_planConfig.obdobi[static_cast<uint8_t>(s_modalObdobi)];
   ob->cas_rezim = PLAN_CAS_OD_DELKA;
   s_modalEdited = true;
-  s_planDirty = true;
+  uiPlanMarkDirty();
   const int maxDelka = maxDelkaProObdobi(static_cast<uint8_t>(s_modalObdobi));
 
   switch (*action) {
@@ -526,6 +528,7 @@ void createModal(void) {
 
 void uiPlanMarkDirty(void) {
   s_planDirty = true;
+  climatePlanRequestSave();
 }
 
 void uiPlanResetInput(void) {
@@ -612,7 +615,7 @@ void uiPlanCreate(void) {
 
   planObj.lbl_title = lv_label_create(scr);
   lv_label_set_text(planObj.lbl_title, "ČASOVÝ PLÁN");
-  lv_obj_set_style_text_font(planObj.lbl_title, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(planObj.lbl_title, kFontTitle, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(planObj.lbl_title, lv_color_hex(kColText), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_align(planObj.lbl_title, LV_ALIGN_TOP_MID, 0, 12);
   lv_obj_remove_flag(planObj.lbl_title, LV_OBJ_FLAG_CLICKABLE);

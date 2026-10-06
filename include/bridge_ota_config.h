@@ -2,9 +2,9 @@
 #ifndef BRIDGE_OTA_CONFIG_H
 #define BRIDGE_OTA_CONFIG_H
 
-/** Hostname prefix — doplní se MAC, např. lgtherma-bridge-A1B2C3 */
+/** Hostname prefix — doplní se MAC, např. windmi-bridge-A1B2C3 */
 #ifndef BRIDGE_OTA_HOST_PREFIX
-#define BRIDGE_OTA_HOST_PREFIX "lgtherma-bridge"
+#define BRIDGE_OTA_HOST_PREFIX "windmi-bridge"
 #endif
 
 /** Volitelné heslo espota (prázdné = bez hesla). */

@@ -3,7 +3,7 @@
 #define PZEM_OTA_CONFIG_H
 
 #ifndef PZEM_OTA_HOSTNAME
-#define PZEM_OTA_HOSTNAME "lgtherma-pzem"
+#define PZEM_OTA_HOSTNAME "windmi-pzem"
 #endif
 
 /** Volitelné heslo espota (prázdné = bez hesla). */

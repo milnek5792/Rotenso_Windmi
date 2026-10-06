@@ -94,7 +94,7 @@ S3 musí být **STA na stejném AP** (`peer.channel = 0`).
 
 ### Kosmetika / identifikátory
 - NVS namespace `lg_therma`
-- MQTT base / OTA hostnames `lgtherma-*`
+- MQTT base / OTA hostnames: nyní `windmi` / `windmi-*` (dříve `lgtherma-*`)
 - Názvy obrazovek, poruchy vázané na A0 kódy
 
 ### Cílové API pro novou značku

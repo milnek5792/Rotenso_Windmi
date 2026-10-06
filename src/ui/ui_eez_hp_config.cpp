@@ -35,6 +35,7 @@ constexpr int kRowH = 48;
 constexpr int kSmallBtnW = 56;
 
 const lv_font_t* kFont = &ui_font_font_cs_24;
+const lv_font_t* kFontTitle = &ui_font_font_cs_28;
 bool s_created = false;
 bool s_active = false;
 
@@ -297,6 +298,8 @@ void uiHpConfigCreate(void) {
       makeButton(scr, kMargin, 4, 120, kBtnH, "< ZPĚT", onBack, 0x48484Fu);
 
   hpConfigObj.lbl_title = makeLabel(scr, 0, 10, 0, "KONFIGURACE TČ", kColText);
+  lv_obj_set_style_text_font(hpConfigObj.lbl_title, kFontTitle,
+                             LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_align(hpConfigObj.lbl_title, LV_ALIGN_TOP_MID,
                          LV_PART_MAIN | LV_STATE_DEFAULT);
 

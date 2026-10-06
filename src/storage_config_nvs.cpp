@@ -30,6 +30,7 @@ constexpr const char* kKeyBlPct = "bl_pct";
 constexpr const char* kKeyBlSleep = "bl_sleep";
 constexpr const char* kKeyPlan = "plan_cfg";
 constexpr const char* kKeyReg = "reg_cfg";
+constexpr const char* kKeyRoomSpX10 = "room_sp_x10";
 constexpr const char* kKeyUiRezim = "ui_rezim";
 constexpr const char* kKeyTcOn = "tc_on";
 constexpr const char* kKeyTcSp = "tc_sp";
@@ -43,10 +44,149 @@ constexpr const char* kKeyEnPwr4 = "en_p4";
 constexpr const char* kKeyEnPwr5 = "en_p5";
 constexpr const char* kKeyEnPwr6 = "en_p6";
 constexpr uint32_t kPlanMagic = 0x504C414Eu;
-/** Bump jen při změně layoutu PlanTydenConfig — ne při změně výchozích hodnot. */
-constexpr uint16_t kPlanVersion = 4;
-/** Nejstarší verze se stejným binárním layoutem (včetně cas_rezim). */
+/** v5 = pevný packed payload (nezávislý na paddingu PlanTydenConfig v RAM). */
+constexpr uint16_t kPlanVersion = 5;
 constexpr uint16_t kPlanVersionMinCompat = 2;
+
+#pragma pack(push, 1)
+struct PlanObdobiCasStored {
+  uint8_t zh;
+  uint8_t zm;
+  uint8_t kh;
+  uint8_t km;
+  uint8_t cas_rezim;
+};
+
+struct PlanBunkaStored {
+  uint8_t akce;
+  uint8_t utlum_stupne;
+};
+
+struct PlanTydenConfigStored {
+  uint8_t aktivni;
+  PlanObdobiCasStored obdobi[PLAN_POCET_OBDOBI];
+  PlanBunkaStored tabulka[PLAN_POCET_DNU][PLAN_POCET_OBDOBI];
+};
+
+struct PlanObdobiCasStoredV3 {
+  uint8_t zh;
+  uint8_t zm;
+  uint8_t kh;
+  uint8_t km;
+};
+
+struct PlanTydenConfigStoredV3 {
+  uint8_t aktivni;
+  PlanObdobiCasStoredV3 obdobi[PLAN_POCET_OBDOBI];
+  PlanBunkaStored tabulka[PLAN_POCET_DNU][PLAN_POCET_OBDOBI];
+};
+#pragma pack(pop)
+
+constexpr size_t kPlanPayloadPacked = sizeof(PlanTydenConfigStored);
+constexpr size_t kPlanPayloadV3 = sizeof(PlanTydenConfigStoredV3);
+
+void planConfigToStored(const PlanTydenConfig* src, PlanTydenConfigStored* dst) {
+  if (!src || !dst) {
+    return;
+  }
+  memset(dst, 0, sizeof(*dst));
+  dst->aktivni = src->aktivni ? 1 : 0;
+  for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
+    dst->obdobi[o].zh = src->obdobi[o].zacatek.hodina;
+    dst->obdobi[o].zm = src->obdobi[o].zacatek.minuta;
+    dst->obdobi[o].kh = src->obdobi[o].konec.hodina;
+    dst->obdobi[o].km = src->obdobi[o].konec.minuta;
+    dst->obdobi[o].cas_rezim = static_cast<uint8_t>(src->obdobi[o].cas_rezim);
+  }
+  for (int d = 0; d < PLAN_POCET_DNU; ++d) {
+    for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
+      dst->tabulka[d][o].akce = static_cast<uint8_t>(src->tabulka[d][o].akce);
+      dst->tabulka[d][o].utlum_stupne = src->tabulka[d][o].utlum_stupne;
+    }
+  }
+}
+
+void planStoredToConfig(const PlanTydenConfigStored* src, PlanTydenConfig* dst) {
+  if (!src || !dst) {
+    return;
+  }
+  dst->aktivni = src->aktivni != 0;
+  for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
+    dst->obdobi[o].zacatek.hodina = src->obdobi[o].zh;
+    dst->obdobi[o].zacatek.minuta = src->obdobi[o].zm;
+    dst->obdobi[o].konec.hodina = src->obdobi[o].kh;
+    dst->obdobi[o].konec.minuta = src->obdobi[o].km;
+    const uint8_t cr = src->obdobi[o].cas_rezim;
+    dst->obdobi[o].cas_rezim =
+        (cr == PLAN_CAS_OD_DELKA) ? PLAN_CAS_OD_DELKA : PLAN_CAS_OD_DO;
+  }
+  for (int d = 0; d < PLAN_POCET_DNU; ++d) {
+    for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
+      dst->tabulka[d][o].akce = static_cast<PlanAkce>(src->tabulka[d][o].akce);
+      dst->tabulka[d][o].utlum_stupne = src->tabulka[d][o].utlum_stupne;
+    }
+  }
+}
+
+void planStoredV3ToConfig(const PlanTydenConfigStoredV3* src, PlanTydenConfig* dst) {
+  if (!src || !dst) {
+    return;
+  }
+  dst->aktivni = src->aktivni != 0;
+  for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
+    dst->obdobi[o].zacatek.hodina = src->obdobi[o].zh;
+    dst->obdobi[o].zacatek.minuta = src->obdobi[o].zm;
+    dst->obdobi[o].konec.hodina = src->obdobi[o].kh;
+    dst->obdobi[o].konec.minuta = src->obdobi[o].km;
+    dst->obdobi[o].cas_rezim = PLAN_CAS_OD_DELKA;
+  }
+  for (int d = 0; d < PLAN_POCET_DNU; ++d) {
+    for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
+      dst->tabulka[d][o].akce = static_cast<PlanAkce>(src->tabulka[d][o].akce);
+      dst->tabulka[d][o].utlum_stupne = src->tabulka[d][o].utlum_stupne;
+    }
+  }
+}
+
+bool decodePlanPayload(const uint8_t* payload, size_t payloadLen, uint16_t version,
+                       PlanTydenConfig* cfg) {
+  if (!payload || !cfg || payloadLen == 0) {
+    return false;
+  }
+  if (version < kPlanVersionMinCompat) {
+    return false;
+  }
+
+  // v5+: vždy pevný packed layout (nikdy raw memcpy — sizeof(PlanTydenConfig) se smí rovnat).
+  if (version >= 5) {
+    if (payloadLen < kPlanPayloadPacked) {
+      return false;
+    }
+    PlanTydenConfigStored packed{};
+    memcpy(&packed, payload, sizeof(packed));
+    planStoredToConfig(&packed, cfg);
+    return true;
+  }
+
+  // v2–v4: jen přesná shoda délky (žádné „>=“ — to kazilo blob a migrate ho přepsal).
+  if (payloadLen == kPlanPayloadPacked) {
+    PlanTydenConfigStored packed{};
+    memcpy(&packed, payload, sizeof(packed));
+    planStoredToConfig(&packed, cfg);
+    return true;
+  }
+  if (payloadLen == kPlanPayloadV3) {
+    PlanTydenConfigStoredV3 packed{};
+    memcpy(&packed, payload, sizeof(packed));
+    planStoredV3ToConfig(&packed, cfg);
+    return true;
+  }
+  if (payloadLen == sizeof(PlanTydenConfig)) {
+    memcpy(cfg, payload, sizeof(PlanTydenConfig));
+    return true;
+  }
+  return false;
+}
 constexpr uint32_t kRegMagic = 0x52454731u;  // REG1
 constexpr uint16_t kRegVersion = 5;
 constexpr uint32_t kSleepOptsSec[] = {0, 60, 120, 300, 600, 1800};
@@ -296,19 +436,44 @@ void storageSaveSleepTimeoutSec(uint32_t sec) {
   Serial.printf("[NVS] save usinani=%lu → %s\n", (unsigned long)sec, n ? "ok" : "FAIL");
 }
 
+bool storagePlanConfigKeyExists(void) {
+  NvsLock lock;
+  ensureOpen();
+  if (!s_open) {
+    return false;
+  }
+  return s_prefs.isKey(kKeyPlan);
+}
+
+void savePlanConfigLocked(const PlanTydenConfig* cfg);
+
 bool storageLoadPlanConfig(PlanTydenConfig* cfg) {
   if (!cfg) {
     return false;
   }
   NvsLock lock;
   ensureOpen();
-  size_t len = s_prefs.getBytesLength(kKeyPlan);
-  if (len < sizeof(PlanTydenConfig) + 6) {
+  if (!s_open) {
+    Serial.println("[NVS] plan_cfg load: NVS not open");
     return false;
   }
-  uint8_t buf[sizeof(PlanTydenConfig) + 8];
+  const size_t len = s_prefs.getBytesLength(kKeyPlan);
+  // Dost místa i pro starší raw blob s paddingem; při větším blobu nenačítat (neřezat).
+  constexpr size_t kMaxBlob = 6 + 192;
+  if (len < 6 + kPlanPayloadV3) {
+    Serial.printf("[NVS] plan_cfg load: chybi/zkraceny blob len=%u (min %u)\n",
+                  (unsigned)len, (unsigned)(6 + kPlanPayloadV3));
+    return false;
+  }
+  if (len > kMaxBlob) {
+    Serial.printf("[NVS] plan_cfg load: blob moc velky len=%u\n", (unsigned)len);
+    return false;
+  }
+  uint8_t buf[kMaxBlob];
   const size_t got = s_prefs.getBytes(kKeyPlan, buf, sizeof(buf));
-  if (got < 6 + sizeof(PlanTydenConfig)) {
+  if (got != len || got < 6 + kPlanPayloadV3) {
+    Serial.printf("[NVS] plan_cfg load: getBytes=%u expected=%u\n", (unsigned)got,
+                  (unsigned)len);
     return false;
   }
   uint32_t magic = 0;
@@ -316,13 +481,37 @@ bool storageLoadPlanConfig(PlanTydenConfig* cfg) {
   memcpy(&magic, buf, 4);
   memcpy(&version, buf + 4, 2);
   if (magic != kPlanMagic) {
+    Serial.printf("[NVS] plan_cfg load: bad magic 0x%08lX\n",
+                  (unsigned long)magic);
     return false;
   }
-  if (version < kPlanVersionMinCompat) {
+  const size_t payloadLen = got - 6;
+  if (!decodePlanPayload(buf + 6, payloadLen, version, cfg)) {
+    Serial.printf("[NVS] plan_cfg load: decode FAIL ver=%u payload=%u ram=%u packed=%u\n",
+                  (unsigned)version, (unsigned)payloadLen,
+                  (unsigned)sizeof(PlanTydenConfig), (unsigned)kPlanPayloadPacked);
     return false;
   }
-  memcpy(cfg, buf + 6, sizeof(PlanTydenConfig));
+  // Nikdy nepřepisovat NVS při bootu — špatný decode + migrate dřív mazal plán po uploadu.
+  // Upgrade na v5 proběhne až při climatePlanSave (odchod z UI / dirty flush).
+  Serial.printf("[NVS] plan_cfg load ok ver=%u payload=%u aktivni=%d\n",
+                (unsigned)version, (unsigned)payloadLen, (int)cfg->aktivni);
   return true;
+}
+
+void savePlanConfigLocked(const PlanTydenConfig* cfg) {
+  if (!cfg || !s_open) {
+    return;
+  }
+  PlanTydenConfigStored packed{};
+  planConfigToStored(cfg, &packed);
+  uint8_t buf[6 + kPlanPayloadPacked];
+  memcpy(buf, &kPlanMagic, 4);
+  memcpy(buf + 4, &kPlanVersion, 2);
+  memcpy(buf + 6, &packed, sizeof(packed));
+  // remove před put — jisté přepsání i při změně délky blobu
+  s_prefs.remove(kKeyPlan);
+  s_prefs.putBytes(kKeyPlan, buf, sizeof(buf));
 }
 
 void storageSavePlanConfig(const PlanTydenConfig* cfg) {
@@ -331,11 +520,15 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg) {
   }
   NvsLock lock;
   ensureOpen();
-  uint8_t buf[6 + sizeof(PlanTydenConfig)];
-  memcpy(buf, &kPlanMagic, 4);
-  memcpy(buf + 4, &kPlanVersion, 2);
-  memcpy(buf + 6, cfg, sizeof(PlanTydenConfig));
-  s_prefs.putBytes(kKeyPlan, buf, sizeof(buf));
+  if (!s_open) {
+    Serial.println("[NVS] plan_cfg save: NVS not open");
+    return;
+  }
+  savePlanConfigLocked(cfg);
+  const size_t checkLen = s_prefs.getBytesLength(kKeyPlan);
+  const bool ok = checkLen == 6 + kPlanPayloadPacked;
+  Serial.printf("[NVS] plan_cfg save aktivni=%d bytes=%u → %s\n",
+                (int)cfg->aktivni, (unsigned)checkLen, ok ? "ok" : "FAIL");
 }
 
 void saveRegulatorConfigLocked(const RegulatorConfig* cfg) {
@@ -346,7 +539,53 @@ void saveRegulatorConfigLocked(const RegulatorConfig* cfg) {
   memcpy(buf, &kRegMagic, 4);
   memcpy(buf + 4, &kRegVersion, 2);
   memcpy(buf + 6, cfg, sizeof(RegulatorConfig));
+  s_prefs.remove(kKeyReg);
   s_prefs.putBytes(kKeyReg, buf, sizeof(buf));
+}
+
+bool storageRegulatorConfigKeyExists(void) {
+  NvsLock lock;
+  ensureOpen();
+  if (!s_open) {
+    return false;
+  }
+  return s_prefs.isKey(kKeyReg);
+}
+
+bool storageLoadRoomSpTenths(int16_t* outTenths) {
+  if (!outTenths) {
+    return false;
+  }
+  NvsLock lock;
+  ensureOpen();
+  if (!s_open || !s_prefs.isKey(kKeyRoomSpX10)) {
+    return false;
+  }
+  const int v = s_prefs.getInt(kKeyRoomSpX10, -1);
+  if (v < 180 || v > 240) {
+    return false;
+  }
+  *outTenths = static_cast<int16_t>(v);
+  return true;
+}
+
+void storageSaveRoomSpTenths(int16_t tenths) {
+  if (tenths < 180) {
+    tenths = 180;
+  }
+  if (tenths > 240) {
+    tenths = 240;
+  }
+  NvsLock lock;
+  ensureOpen();
+  if (!s_open) {
+    Serial.println("[NVS] room_sp_x10 save: NVS not open");
+    return;
+  }
+  const size_t n = s_prefs.putInt(kKeyRoomSpX10, static_cast<int32_t>(tenths));
+  if (!n) {
+    Serial.printf("[NVS] room_sp_x10=%d → FAIL\n", (int)tenths);
+  }
 }
 
 bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
@@ -359,9 +598,14 @@ bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
   if (len < 6) {
     return false;
   }
-  uint8_t buf[128];
+  constexpr size_t kMaxBlob = 6 + 128;
+  if (len > kMaxBlob) {
+    Serial.printf("[NVS] reg_cfg blob moc velky len=%u\n", (unsigned)len);
+    return false;
+  }
+  uint8_t buf[kMaxBlob];
   const size_t got = s_prefs.getBytes(kKeyReg, buf, sizeof(buf));
-  if (got < 6) {
+  if (got != len || got < 6) {
     return false;
   }
   uint32_t magic = 0;
@@ -373,6 +617,8 @@ bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
   }
   if (version >= kRegVersion) {
     if (got < 6 + sizeof(RegulatorConfig)) {
+      Serial.printf("[NVS] reg_cfg v%u kratky got=%u need=%u\n", (unsigned)version,
+                    (unsigned)got, (unsigned)(6 + sizeof(RegulatorConfig)));
       return false;
     }
     memcpy(cfg, buf + 6, sizeof(RegulatorConfig));
@@ -385,7 +631,7 @@ bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
     RegulatorConfigV4 old{};
     memcpy(&old, buf + 6, sizeof(RegulatorConfigV4));
     migrateRegulatorV4ToV5(&old, cfg);
-    saveRegulatorConfigLocked(cfg);
+    // Jen RAM — NVS přepíše climateRegulatorSave / room_sp_x10.
     return true;
   }
   return false;
@@ -398,6 +644,10 @@ void storageSaveRegulatorConfig(const RegulatorConfig* cfg) {
   NvsLock lock;
   ensureOpen();
   saveRegulatorConfigLocked(cfg);
+  const size_t checkLen = s_prefs.getBytesLength(kKeyReg);
+  const bool ok = checkLen == 6 + sizeof(RegulatorConfig);
+  Serial.printf("[NVS] reg_cfg save room_sp=%.1f bytes=%u → %s\n",
+                (double)cfg->room_sp_c, (unsigned)checkLen, ok ? "ok" : "FAIL");
 }
 
 bool storageLoadUiRezim(uint8_t* out) {
@@ -511,7 +761,25 @@ const char* weekPowerKey(int day) {
   return keys[day];
 }
 
+/** Volat pod NvsLock + ensureOpen. */
+void storagePruneEnergyWeekPowerOldDaysUnlocked(void) {
+  // en_p2..en_p6 = 5×2,8 kB — celé NVS má jen 20 kB.
+  for (int d = 2; d < 7; ++d) {
+    const char* key = weekPowerKey(d);
+    if (s_prefs.isKey(key)) {
+      s_prefs.remove(key);
+      Serial.printf("[NVS] pruned %s (free space for today graph)\n", key);
+    }
+  }
+}
+
 }  // namespace
+
+bool storageEnergyMetaKeyExists(void) {
+  NvsLock lock;
+  ensureOpen();
+  return s_prefs.isKey(kKeyEnMeta);
+}
 
 bool storageLoadEnergyMeta(void* dst, size_t len) {
   if (!dst || len == 0) {
@@ -523,10 +791,13 @@ bool storageLoadEnergyMeta(void* dst, size_t len) {
     return false;
   }
   const size_t got = s_prefs.getBytesLength(kKeyEnMeta);
-  if (got != len) {
+  // Prefix OK (větší blob z dočasného v3) i menší (starší FW) — zbytek vynuluj.
+  if (got < sizeof(uint32_t) + sizeof(uint16_t)) {
     return false;
   }
-  return s_prefs.getBytes(kKeyEnMeta, dst, len) == len;
+  memset(dst, 0, len);
+  const size_t n = (got < len) ? got : len;
+  return s_prefs.getBytes(kKeyEnMeta, dst, n) == n;
 }
 
 void storageSaveEnergyMeta(const void* src, size_t len) {
@@ -546,10 +817,15 @@ bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count) {
   }
   NvsLock lock;
   ensureOpen();
+  // Ne prune při load/boot — flash erase během Wi‑Fi.begin shazuje Tab5 SDIO.
   bool any = false;
   for (int d = 0; d < 7; ++d) {
-    const char* key = weekPowerKey(d);
     uint16_t* day = dst + d * 1440;
+    if (d > 1) {
+      memset(day, 0, 1440 * sizeof(uint16_t));
+      continue;
+    }
+    const char* key = weekPowerKey(d);
     if (!s_prefs.isKey(key)) {
       memset(day, 0, 1440 * sizeof(uint16_t));
       continue;
@@ -561,18 +837,25 @@ bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count) {
     }
     if (s_prefs.getBytes(key, day, want) == want) {
       any = true;
+    } else {
+      memset(day, 0, want);
     }
   }
   return any;
 }
 
 static bool putEnergyDay(int d, const uint16_t* daySamples) {
+  if (d < 0 || d > 1) {
+    // Do NVS jen dnes + včera.
+    return true;
+  }
   const char* key = weekPowerKey(d);
   const size_t want = 1440 * sizeof(uint16_t);
+  s_prefs.remove(key);
   const size_t got = s_prefs.putBytes(key, daySamples, want);
   if (got != want) {
-    Serial.printf("[NVS] %s putBytes FAIL (%u/%u)\n", key, (unsigned)got,
-                  (unsigned)want);
+    Serial.printf("[NVS] %s putBytes FAIL (%u/%u) — NVS plné?\n", key,
+                  (unsigned)got, (unsigned)want);
     return false;
   }
   return true;
@@ -584,9 +867,9 @@ void storageSaveEnergyWeekPower(const uint16_t* src, size_t count) {
   }
   NvsLock lock;
   ensureOpen();
-  for (int d = 0; d < 7; ++d) {
+  storagePruneEnergyWeekPowerOldDaysUnlocked();
+  for (int d = 0; d <= 1; ++d) {
     if (!putEnergyDay(d, src + d * 1440)) {
-      // Další dny by jen plnily log / flash — skonči.
       break;
     }
     delay(1);
@@ -597,9 +880,18 @@ void storageSaveEnergyWeekPowerDay(int dayIndex, const uint16_t* daySamples) {
   if (!daySamples || dayIndex < 0 || dayIndex > 6) {
     return;
   }
+  if (dayIndex > 1) {
+    return;
+  }
   NvsLock lock;
   ensureOpen();
   (void)putEnergyDay(dayIndex, daySamples);
+}
+
+void storagePruneEnergyWeekPowerOldDays(void) {
+  NvsLock lock;
+  ensureOpen();
+  storagePruneEnergyWeekPowerOldDaysUnlocked();
 }
 
 void storageClearEnergyHistory(void) {

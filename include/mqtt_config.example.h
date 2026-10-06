@@ -55,6 +55,8 @@
 #define MQTT_TOPIC_TELE_REG_MODE     MQTT_BASE "/tele/reg_mode"
 /** Korekce ekvitermní křivky [°C], typicky −5…+5. */
 #define MQTT_TOPIC_TELE_EQ_OFFSET    MQTT_BASE "/tele/eq_offset"
+/** Korekce ekvitermní křivky [°C], typicky −5…+5. */
+#define MQTT_TOPIC_TELE_EQ_OFFSET    MQTT_BASE "/tele/eq_offset"
 #define MQTT_TOPIC_TELE_DELTA_T      MQTT_BASE "/tele/delta_t"
 #define MQTT_TOPIC_TELE_POWER        MQTT_BASE "/tele/power"
 #define MQTT_TOPIC_TELE_PUMP         MQTT_BASE "/tele/pump"

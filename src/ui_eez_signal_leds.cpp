@@ -66,13 +66,14 @@ lv_obj_t* s_lblReg = nullptr;
 lv_obj_t* s_dots[6] = {};
 
 static const SignalLedDef* signalDefs(size_t* countOut) {
+  // Y posunuto +30 vůči původnímu layoutu (START/STOP výška 60→90).
   static const SignalLedDef defs[] = {
-      {ledChod, lblChod, &UiEezModel::sig_chod, kOnGreen, 868, 183},
-      {ledCerpadlo, lblCerpadlo, &UiEezModel::sig_cerpadlo, kOnGreen, 868, 225},
-      {ledKompresor, lblKompresor, &UiEezModel::sig_kompresor, kOnGreen, 868, 267},
-      {ledOdmrazovani, lblOdmrazovani, &UiEezModel::sig_odmrazovani, kOnOrange, 868, 309},
-      {ledElTopeni, lblElTopeni, &UiEezModel::sig_el_topeni, kOnOrange, 868, 351},
-      {ledNull, lblNull, &UiEezModel::sig_tichy_lin, kOnBlue, 868, 393},
+      {ledChod, lblChod, &UiEezModel::sig_chod, kOnGreen, 868, 213},
+      {ledCerpadlo, lblCerpadlo, &UiEezModel::sig_cerpadlo, kOnGreen, 868, 255},
+      {ledKompresor, lblKompresor, &UiEezModel::sig_kompresor, kOnGreen, 868, 297},
+      {ledOdmrazovani, lblOdmrazovani, &UiEezModel::sig_odmrazovani, kOnOrange, 868, 339},
+      {ledElTopeni, lblElTopeni, &UiEezModel::sig_el_topeni, kOnOrange, 868, 381},
+      {ledNull, lblNull, &UiEezModel::sig_tichy_lin, kOnBlue, 868, 423},
   };
   *countOut = sizeof(defs) / sizeof(defs[0]);
   return defs;
@@ -224,7 +225,7 @@ static void ensureTichyLabel(void) {
     return;
   }
   s_lblTichy = lv_label_create(objects.main);
-  lv_obj_set_pos(s_lblTichy, 901, 387);
+  lv_obj_set_pos(s_lblTichy, 901, 417);
   lv_obj_set_style_text_font(s_lblTichy, &ui_font_font_cs_24,
                              LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_align(s_lblTichy, LV_TEXT_ALIGN_LEFT,

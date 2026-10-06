@@ -7,6 +7,7 @@
   --room: #0a84ff;
   --water: #ff9f0a;
   --ekv: #64d2ff;
+  --ekv: #64d2ff;
   --ok: #30d158;
   --warn: #ff9f0a;
   --fault: #ff453a;
@@ -41,7 +42,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 8px);
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 20px);
 }
 
 .topbar {
@@ -259,6 +260,10 @@ body {
   color: var(--ekv);
 }
 
+.sp-title.sp-ekv {
+  color: var(--ekv);
+}
+
 .sp-row {
   display: flex;
   align-items: center;
@@ -349,6 +354,11 @@ body {
 .chip-active.chip-water {
   border-color: var(--water);
   background: #3d2a0a;
+}
+
+.chip-active.chip-ekv {
+  border-color: var(--ekv);
+  background: #0a3040;
 }
 
 .chip-active.chip-ekv {

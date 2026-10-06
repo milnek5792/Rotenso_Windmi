@@ -28,7 +28,7 @@ enum AppCmd : uint8_t {
   APP_CMD_SETPOINT_ABS,
   /** Auto: pokoj (arg = desetiny °C, 0.5 → 5); ruční: voda (celé °C). */
   APP_CMD_SETPOINT_DELTA,
-  /** arg: 1 = room (Auto), 0 = water (ruční). */
+  /** arg: UiRezimRegulace (0=pokoj, 1=ruční voda, 2=ekviterm). */
   APP_CMD_SET_MODE,
 };
 
@@ -48,6 +48,8 @@ bool appCmdEnqueuePower(bool start, UiSpSource src);
 bool appCmdEnqueueSetpointAbs(int val, UiSpSource src);
 bool appCmdEnqueueAdjust(int delta, UiSpSource src);
 bool appCmdEnqueueMode(bool roomMode, UiSpSource src);
+/** rezim = UiRezimRegulace. */
+bool appCmdEnqueueRegMode(uint8_t rezim, UiSpSource src);
 
 /** UI kontext (ui_tick): navigace, Wi‑Fi/MQTT formuláře. */
 void appCmdDrainUi(void);

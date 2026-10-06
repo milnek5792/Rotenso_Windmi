@@ -106,7 +106,16 @@ bool appCmdEnqueueAdjust(int delta, UiSpSource src) {
 }
 
 bool appCmdEnqueueMode(bool roomMode, UiSpSource src) {
-  const AppMsg msg = {APP_CMD_SET_MODE, roomMode ? 1 : 0, src};
+  return appCmdEnqueueRegMode(
+      roomMode ? (uint8_t)UI_REZIM_AUTO : (uint8_t)UI_REZIM_VYSTUPNI_TEPLOTA,
+      src);
+}
+
+bool appCmdEnqueueRegMode(uint8_t rezim, UiSpSource src) {
+  if (rezim > (uint8_t)UI_REZIM_EKVITERM) {
+    return false;
+  }
+  const AppMsg msg = {APP_CMD_SET_MODE, (int32_t)rezim, src};
   return appCmdEnqueue(&msg);
 }
 

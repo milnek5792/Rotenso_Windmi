@@ -13,6 +13,9 @@
 
 PlanTydenConfig g_planConfig;
 
+static bool s_planSavePending = false;
+static uint32_t s_planSaveRequestMs = 0;
+
 namespace {
 
 const char* kDny[] = {"Po", "Út", "St", "Čt", "Pá", "So", "Ne"};
@@ -228,6 +231,23 @@ void climatePlanSetDefaults(void) {
 
 void climatePlanSave(void) {
   storageSavePlanConfig(&g_planConfig);
+  s_planSavePending = false;
+}
+
+void climatePlanRequestSave(void) {
+  s_planSavePending = true;
+  s_planSaveRequestMs = millis();
+}
+
+void climatePlanFlushPendingSave(void) {
+  if (!s_planSavePending) {
+    return;
+  }
+  // Po editaci počkat — okamžitý NVS flash bliká LVGL.
+  if ((millis() - s_planSaveRequestMs) < 1500u) {
+    return;
+  }
+  climatePlanSave();
 }
 
 const PlanTydenConfig* climatePlanGetConfig(void) {
@@ -270,7 +290,15 @@ void climatePlanInit(void) {
   const bool loaded = storageLoadPlanConfig(&g_planConfig);
   if (!loaded) {
     climatePlanSetDefaults();
-    climatePlanSave();
+    if (!storagePlanConfigKeyExists()) {
+      Serial.println("[NVS] plan_cfg chybi — ukladam vychozi");
+      climatePlanSave();
+    } else {
+      // Ne prepisovat NVS — pri chybe decode zustane blob pro migraci / servis.
+      Serial.println("[NVS] plan_cfg load FAIL — vychozi v RAM, NVS beze zmeny");
+    }
+  } else {
+    Serial.printf("[NVS] plan_cfg ok aktivni=%d\n", (int)g_planConfig.aktivni);
   }
   // Sanitize vždy — limity délek / buněk; layout se nemění, data z NVS zůstanou.
   for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {

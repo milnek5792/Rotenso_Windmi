@@ -4,6 +4,7 @@
 #include "ui_eez_settings.h"
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
+#include "climate_regulator.h"
 #include "ui_eez_energy.h"
 #include "ui_eez_hp_config.h"
 #include "ui_eez_ui.h"
@@ -25,6 +26,8 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   }
   netSdioClearUiFreeze();
 
+  const bool leavingMain =
+      uiGetCurrentScreen() == SCREEN_ID_MAIN && screenId != SCREEN_ID_MAIN;
   const bool leavingPlan =
       uiGetCurrentScreen() == SCREEN_ID_PLAN && screenId != SCREEN_ID_PLAN;
   const bool leavingReg =
@@ -52,6 +55,7 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   }
   if (screenId == SCREEN_ID_PLAN) {
     uiPlanEnsureCreated();
+    uiPlanRefreshAll();
   }
   if (screenId == SCREEN_ID_REGULATOR) {
     uiRegulatorEnsureCreated();
@@ -65,6 +69,9 @@ void uiNavigateTo(enum ScreensEnum screenId) {
 
   loadScreen(screenId);
 
+  if (leavingMain) {
+    climateRegulatorFlushRoomSpNow();
+  }
   if (leavingPlan) {
     uiPlanFlushSave();
   }

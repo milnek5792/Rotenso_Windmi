@@ -95,6 +95,8 @@ bool uiDisplayHandleTouchWhileAsleep(bool pressed) {
   if (s_asleep) {
     if (pressed) {
       uiDisplayWake();
+      // Po wake rovnou povolit klik — jinak první tap jen rozsvítí a UI „nejde“.
+      s_ignoreUntilRelease = false;
     }
     return true;
   }

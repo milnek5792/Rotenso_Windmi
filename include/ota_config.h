@@ -3,7 +3,7 @@
 #define OTA_CONFIG_H
 
 #ifndef OTA_HOSTNAME
-#define OTA_HOSTNAME "lgtherma-tab5"
+#define OTA_HOSTNAME "windmi-tab5"
 #endif
 
 /** Volitelné heslo pro espota (prázdné = bez hesla). */

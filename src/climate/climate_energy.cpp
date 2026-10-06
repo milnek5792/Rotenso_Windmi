@@ -2,6 +2,7 @@
 #include "climate_energy.h"
 
 #include "net_ota.h"
+#include "net_wifi_mgr.h"
 #include "storage_config_nvs.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
@@ -13,8 +14,8 @@
 
 namespace {
 
-constexpr uint32_t kSaveIntervalMs = 30UL * 60UL * 1000UL;       // meta ~30 min
-constexpr uint32_t kPowerSaveIntervalMs = 30UL * 60UL * 1000UL;  // příkon ~30 min
+constexpr uint32_t kSaveIntervalMs = 5UL * 60UL * 1000UL;        // meta (den/měsíc/sezóna) ~5 min
+constexpr uint32_t kPowerSaveIntervalMs = 5UL * 60UL * 1000UL;   // graf příkonu ~5 min
 constexpr uint32_t kPowerSaveFirstMs = 45UL * 1000UL;            // první zápis po dirty (boot)
 constexpr float kWhEps = 0.0005f;
 
@@ -44,10 +45,15 @@ struct EnergyMeta {
 };
 
 constexpr uint32_t kMetaMagic = 0x454E5231u;  // ENR1
+/** Layout pevný — neměnit velikost (NVS exact/compat load). */
 constexpr uint16_t kMetaVersion = 2;
 
 uint16_t* s_weekPower = nullptr;  // 7 * 1440 (W + ENERGY_PWR_AUX_BIT)
 EnergyMeta s_meta{};
+/** RAM-only: kolik z day_kwh[0] už je v season_month (ne do NVS — měnilo by size). */
+float s_day0AppliedSeasonKwh = 0.0f;
+/** false = v NVS je klíč, ale load selhal → NIKDY nepřepisovat flash prázdnem. */
+bool s_allowMetaPersist = false;
 bool s_ok = false;
 uint16_t s_powerW = 0;  // poslední PZEM W (bez el. topení)
 bool s_auxOn = false;
@@ -60,6 +66,7 @@ bool s_metaDirty = false;
 bool s_powerDirty = false;
 bool s_weekFullDirty = false;
 int s_weekSaveDay = 0;
+bool s_prunedOldWeekDays = false;
 
 int ymdFromTm(const struct tm& t) {
   return (t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday;
@@ -76,17 +83,59 @@ bool localNow(struct tm* out) {
   return localtime_r(&now, out) != nullptr;
 }
 
+bool ymdToTm(int ymd, struct tm* out) {
+  if (!out || ymd < 20000101) {
+    return false;
+  }
+  memset(out, 0, sizeof(*out));
+  out->tm_year = ymd / 10000 - 1900;
+  out->tm_mon = (ymd / 100) % 100 - 1;
+  out->tm_mday = ymd % 100;
+  out->tm_hour = 12;
+  out->tm_isdst = -1;
+  return mktime(out) != (time_t)-1;
+}
+
+int ymdAddDays(int ymd, int days) {
+  struct tm tmLocal{};
+  if (!ymdToTm(ymd, &tmLocal)) {
+    return ymd;
+  }
+  time_t sec = mktime(&tmLocal);
+  if (sec == (time_t)-1) {
+    return ymd;
+  }
+  sec += static_cast<time_t>(days) * 86400;
+  if (localtime_r(&sec, &tmLocal) == nullptr) {
+    return ymd;
+  }
+  return ymdFromTm(tmLocal);
+}
+
+float sumSeasonMonthsKwh(void) {
+  float sum = 0.0f;
+  for (int i = 0; i < ENERGY_SEASON_MONTHS; ++i) {
+    sum += s_meta.season_month_kwh[i];
+  }
+  return sum;
+}
+
 void markMetaDirty() {
   s_metaDirty = true;
 }
 
-void ensureYearSlot(int year) {
-  if (s_meta.year_id[0] == year) {
+void syncDayToToday(int todayYmd);
+
+void ensureYearSlot(int seasonYear) {
+  if (seasonYear <= 0) {
     return;
   }
-  // Najdi existující
+  if (s_meta.year_id[0] == seasonYear) {
+    return;
+  }
+  // Najdi existující sezónu a vytáhni dopředu
   for (int i = 0; i < ENERGY_YEAR_SLOTS; ++i) {
-    if (s_meta.year_id[i] == year) {
+    if (s_meta.year_id[i] == seasonYear) {
       const int id = s_meta.year_id[i];
       const float kwh = s_meta.year_kwh[i];
       memmove(&s_meta.year_id[1], &s_meta.year_id[0],
@@ -99,52 +148,99 @@ void ensureYearSlot(int year) {
       return;
     }
   }
-  // Nový rok — posuň historii
+  // Nová sezóna — posuň archiv (starý slot 0 → 1)
   memmove(&s_meta.year_id[1], &s_meta.year_id[0],
           (ENERGY_YEAR_SLOTS - 1) * sizeof(int32_t));
   memmove(&s_meta.year_kwh[1], &s_meta.year_kwh[0],
           (ENERGY_YEAR_SLOTS - 1) * sizeof(float));
-  s_meta.year_id[0] = year;
+  s_meta.year_id[0] = seasonYear;
   s_meta.year_kwh[0] = 0.0f;
   markMetaDirty();
 }
 
 void ensureSeason(int seasonYear) {
-  if (s_meta.season_year == seasonYear) {
+  if (seasonYear <= 0) {
     return;
   }
+  if (s_meta.season_year == seasonYear) {
+    ensureYearSlot(seasonYear);
+    return;
+  }
+  const int32_t prev = s_meta.season_year;
+  if (prev != 0) {
+    // Uzavři starou sezónu v archivu (součet měsíců → slot 0), pak nový slot.
+    if (s_meta.year_id[0] == prev) {
+      s_meta.year_kwh[0] = sumSeasonMonthsKwh();
+    }
+    for (int i = 0; i < ENERGY_SEASON_MONTHS; ++i) {
+      s_meta.season_month_kwh[i] = 0.0f;
+    }
+  }
   s_meta.season_year = seasonYear;
-  for (int i = 0; i < ENERGY_SEASON_MONTHS; ++i) {
-    s_meta.season_month_kwh[i] = 0.0f;
+  ensureYearSlot(seasonYear);
+  if (prev == 0 && s_meta.year_id[0] == seasonYear) {
+    // První přiřazení po loadu — měsíce z NVS nech, slot sezóny sjednoť.
+    s_meta.year_kwh[0] = sumSeasonMonthsKwh();
   }
-  markMetaDirty();
-}
-
-void rollDay(int newYmd) {
-  // Posuň týdenní buffer o 1 den (index 0 = dnes)
-  memmove(&s_weekPower[ENERGY_MINUTES_PER_DAY], &s_weekPower[0],
-          (ENERGY_WEEK_DAYS - 1) * ENERGY_MINUTES_PER_DAY * sizeof(uint16_t));
-  memset(&s_weekPower[0], 0, ENERGY_MINUTES_PER_DAY * sizeof(uint16_t));
-
-  for (int i = ENERGY_WEEK_DAYS - 1; i > 0; --i) {
-    s_meta.day_ymd[i] = s_meta.day_ymd[i - 1];
-    s_meta.day_kwh[i] = s_meta.day_kwh[i - 1];
-  }
-  s_meta.day_ymd[0] = newYmd;
-  s_meta.day_kwh[0] = 0.0f;
-  s_meta.last_ymd = newYmd;
-  s_powerDirty = true;
-  s_weekFullDirty = true;  // posunuté dny zapsat najednou (mimo minutový PWR)
   markMetaDirty();
   s_histGen++;
 }
 
-void applyDelta(float deltaKwh, const struct tm& t) {
-  if (deltaKwh < 0.0f) {
-    deltaKwh = 0.0f;
-  }
-  if (deltaKwh < kWhEps) {
+void syncCurrentSeasonArchiveSlot() {
+  if (s_meta.season_year <= 0) {
     return;
+  }
+  ensureYearSlot(static_cast<int>(s_meta.season_year));
+  const float sum = sumSeasonMonthsKwh();
+  if (s_meta.year_id[0] == s_meta.season_year &&
+      (s_meta.year_kwh[0] + kWhEps < sum || s_meta.year_kwh[0] > sum + kWhEps)) {
+    s_meta.year_kwh[0] = sum;
+    markMetaDirty();
+  }
+}
+
+void creditSeasonForYmd(int ymd, float deltaKwh) {
+  if (deltaKwh < kWhEps || ymd < 20000101) {
+    return;
+  }
+  struct tm t{};
+  if (!ymdToTm(ymd, &t)) {
+    return;
+  }
+  const int month = t.tm_mon + 1;
+  const int year = t.tm_year + 1900;
+  const int seasonYear = climateEnergySeasonYear(year, month);
+  const int seasonIdx = climateEnergySeasonMonthIndex(month);
+  ensureSeason(seasonYear);
+  if (seasonIdx >= 0) {
+    s_meta.season_month_kwh[seasonIdx] += deltaKwh;
+    if (s_meta.year_id[0] == seasonYear) {
+      s_meta.year_kwh[0] += deltaKwh;
+    }
+    s_meta.last_month = month;
+    s_meta.last_cal_year = year;
+    markMetaDirty();
+    s_histGen++;
+  }
+}
+
+/** Dopočet dne do měsíce/sezóny (např. spotřeba jen v day_kwh bez applyDelta). */
+void closeCurrentDayBucket() {
+  const int ymd = static_cast<int>(s_meta.day_ymd[0]);
+  if (ymd <= 0) {
+    return;
+  }
+  const float gap = s_meta.day_kwh[0] - s_day0AppliedSeasonKwh;
+  if (gap >= kWhEps) {
+    creditSeasonForYmd(ymd, gap);
+    s_day0AppliedSeasonKwh = s_meta.day_kwh[0];
+    markMetaDirty();
+  }
+}
+
+bool applyDeltaWithTm(float deltaKwh, const struct tm& t) {
+  if (deltaKwh < kWhEps) {
+    return false;
   }
 
   const int ymd = ymdFromTm(t);
@@ -153,48 +249,114 @@ void applyDelta(float deltaKwh, const struct tm& t) {
   const int seasonYear = climateEnergySeasonYear(year, month);
   const int seasonIdx = climateEnergySeasonMonthIndex(month);
 
-  if (s_meta.last_ymd != 0 && ymd != s_meta.last_ymd) {
-    // Midnight / NTP catch-up — roll missing days at most 6
-    int guard = 0;
-    while (s_meta.last_ymd != ymd && guard < ENERGY_WEEK_DAYS) {
-      rollDay(ymd);  // simplified: jump to today
-      break;
-    }
-  }
-  if (s_meta.day_ymd[0] != ymd) {
-    if (s_meta.day_ymd[0] == 0) {
-      s_meta.day_ymd[0] = ymd;
-      s_meta.last_ymd = ymd;
-    } else {
-      rollDay(ymd);
-    }
-  }
+  syncDayToToday(ymd);
 
-  ensureYearSlot(year);
   ensureSeason(seasonYear);
 
   s_meta.day_kwh[0] += deltaKwh;
-  s_meta.year_kwh[0] += deltaKwh;
   if (seasonIdx >= 0) {
     s_meta.season_month_kwh[seasonIdx] += deltaKwh;
+    s_day0AppliedSeasonKwh += deltaKwh;
+  }
+  // Archiv slot 0 = aktuální sezóna (průběžně)
+  if (s_meta.year_id[0] == seasonYear) {
+    s_meta.year_kwh[0] += deltaKwh;
   }
   s_meta.last_month = month;
   s_meta.last_cal_year = year;
   markMetaDirty();
   s_histGen++;
+  return true;
+}
+
+bool applyDeltaFromYmd(float deltaKwh, int ymd) {
+  struct tm t{};
+  if (!ymdToTm(ymd, &t)) {
+    return false;
+  }
+  return applyDeltaWithTm(deltaKwh, t);
+}
+
+void rollDayOne(int todayYmd) {
+  // Měsíc/sezóna už rostou průběžně; close jen dorovná případný gap (bez NTP).
+  closeCurrentDayBucket();
+  const int prevYmd = static_cast<int>(s_meta.day_ymd[0]);
+  memmove(&s_weekPower[ENERGY_MINUTES_PER_DAY], &s_weekPower[0],
+          (ENERGY_WEEK_DAYS - 1) * ENERGY_MINUTES_PER_DAY * sizeof(uint16_t));
+  memset(&s_weekPower[0], 0, ENERGY_MINUTES_PER_DAY * sizeof(uint16_t));
+
+  for (int i = ENERGY_WEEK_DAYS - 1; i > 0; --i) {
+    s_meta.day_ymd[i] = s_meta.day_ymd[i - 1];
+    s_meta.day_kwh[i] = s_meta.day_kwh[i - 1];
+  }
+  if (prevYmd != 0) {
+    s_meta.day_ymd[0] = ymdAddDays(prevYmd, 1);
+  } else {
+    s_meta.day_ymd[0] = todayYmd;
+  }
+  s_meta.day_kwh[0] = 0.0f;
+  s_day0AppliedSeasonKwh = 0.0f;
+  s_meta.last_ymd = s_meta.day_ymd[0];
+  // Včerejšek hned do NVS (slot 1) — jinak při rebootu stačí zápis prázdného
+  // en_pw0 a celý denní graf je pryč. Zbytek týdne doplní persist.
+  s_powerDirty = true;
+  s_weekFullDirty = true;
+  s_weekSaveDay = 0;
+  markMetaDirty();
+  s_histGen++;
+  if (!netOtaIsBusy() && s_weekPower) {
+    storageSaveEnergyWeekPowerDay(1, &s_weekPower[ENERGY_MINUTES_PER_DAY]);
+  }
+}
+
+void syncDayToToday(int todayYmd) {
+  if (s_meta.day_ymd[0] == 0) {
+    s_meta.day_ymd[0] = todayYmd;
+    s_meta.day_kwh[0] = 0.0f;
+    s_day0AppliedSeasonKwh = 0.0f;
+    s_meta.last_ymd = todayYmd;
+    markMetaDirty();
+    return;
+  }
+  if (static_cast<int>(s_meta.day_ymd[0]) > todayYmd) {
+    // NTP/čas skočil zpět — historii nezašlapávat.
+    s_meta.last_ymd = todayYmd;
+    return;
+  }
+  int guard = 0;
+  while (static_cast<int>(s_meta.day_ymd[0]) < todayYmd &&
+         guard < ENERGY_WEEK_DAYS) {
+    rollDayOne(todayYmd);
+    guard++;
+  }
+  if (static_cast<int>(s_meta.day_ymd[0]) < todayYmd) {
+    // Výpadek > 7 dní — starší sloty už odrolovány, dnešek nastav natvrdo.
+    s_meta.day_ymd[0] = todayYmd;
+    s_meta.day_kwh[0] = 0.0f;
+    s_day0AppliedSeasonKwh = 0.0f;
+    s_meta.last_ymd = todayYmd;
+    s_powerDirty = true;
+    s_weekFullDirty = true;
+    s_weekSaveDay = 0;
+    markMetaDirty();
+    s_histGen++;
+  }
 }
 
 void persistIfNeeded(bool force) {
   // NVS + OTA sdílí flash — zápis během uploadu zasekne espota.
+  // Meta (den/měsíc/sezóna) i příkon jen v intervalu — ne při každém ΔE.
   if (netOtaIsBusy()) {
     return;
   }
   const uint32_t now = millis();
   const bool metaDue = force || ((now - s_lastSaveMs) >= kSaveIntervalMs);
-  bool powerDue = force || s_weekFullDirty;
-  if (!powerDue && s_powerDirty) {
+  bool powerDue = force;
+  if (!powerDue && s_weekFullDirty) {
+    // Po půlnoci: jeden den na tick (ne 30 min × 7). Meta zůstává na intervalu.
+    powerDue = true;
+  } else if (!powerDue && s_powerDirty) {
     if (s_lastPowerSaveMs == 0) {
-      // Po bootu / první dirty — zapsat brzy (ne čekat celý interval).
       powerDue = (now >= kPowerSaveFirstMs);
     } else {
       powerDue = (now - s_lastPowerSaveMs) >= kPowerSaveIntervalMs;
@@ -202,27 +364,40 @@ void persistIfNeeded(bool force) {
   }
 
   if (s_metaDirty && metaDue) {
-    storageSaveEnergyMeta(&s_meta, sizeof(s_meta));
-    s_metaDirty = false;
-    s_lastSaveMs = now;
-  }
-
-  if (s_powerDirty && s_weekPower && powerDue) {
-    if (s_weekFullDirty || force) {
-      // Po jednom dni na tick — 7× putBytes (~20 kB) najednou shazovalo UI/Wi‑Fi.
-      const int d = (s_weekSaveDay >= 0 && s_weekSaveDay < ENERGY_WEEK_DAYS)
-                        ? s_weekSaveDay
-                        : 0;
-      storageSaveEnergyWeekPowerDay(d, &s_weekPower[d * ENERGY_MINUTES_PER_DAY]);
-      s_weekSaveDay = d + 1;
-      if (s_weekSaveDay >= ENERGY_WEEK_DAYS) {
-        s_weekSaveDay = 0;
-        s_weekFullDirty = false;
+    if (!s_allowMetaPersist) {
+      Serial.println("[ENERGY] skip meta save — NVS load failed, protect flash");
+    } else {
+      storageSaveEnergyMeta(&s_meta, sizeof(s_meta));
+      s_metaDirty = false;
+      s_lastSaveMs = now;
+      // S meta i dnešní křivku — ať graf přežije reboot stejně jako kWh.
+      if (s_powerDirty && s_weekPower && !s_weekFullDirty) {
+        storageSaveEnergyWeekPowerDay(0, &s_weekPower[0]);
         s_powerDirty = false;
         s_lastPowerSaveMs = now;
       }
+    }
+  }
+
+  if ((s_powerDirty || s_weekFullDirty) && s_weekPower && powerDue) {
+    if (s_weekFullDirty || force) {
+      // Jen včera (1) a dnes (0) — starší dny v NVS přetekly flash.
+      static const int kOrder[] = {1, 0};
+      constexpr int kOrderN = 2;
+      int idx = s_weekSaveDay;
+      if (idx < 0 || idx >= kOrderN) {
+        idx = 0;
+      }
+      const int d = kOrder[idx];
+      storageSaveEnergyWeekPowerDay(d, &s_weekPower[d * ENERGY_MINUTES_PER_DAY]);
+      s_weekSaveDay = idx + 1;
+      s_lastPowerSaveMs = now;
+      if (s_weekSaveDay >= kOrderN) {
+        s_weekSaveDay = 0;
+        s_weekFullDirty = false;
+        s_powerDirty = false;
+      }
     } else {
-      // Běžný minutový vzorek: jen dnešek.
       storageSaveEnergyWeekPowerDay(0, &s_weekPower[0]);
       s_powerDirty = false;
       s_lastPowerSaveMs = now;
@@ -275,8 +450,22 @@ void tickAuxHeat(const struct tm* tOpt) {
   // Integrovat celé periody (i po delším ticku)
   const uint32_t periods = (now - s_lastAuxMs) / kAuxPeriodMs;
   s_lastAuxMs += periods * kAuxPeriodMs;
-  if (tOpt && periods > 0) {
-    applyDelta(kAuxDeltaKwh * (float)periods, *tOpt);
+  if (periods > 0) {
+    const float dKwh = kAuxDeltaKwh * (float)periods;
+    if (tOpt) {
+      applyDeltaWithTm(dKwh, *tOpt);
+    } else {
+      const int ymd = static_cast<int>(s_meta.day_ymd[0]);
+      if (ymd > 0) {
+        applyDeltaFromYmd(dKwh, ymd);
+      } else if (s_meta.last_ymd > 0) {
+        applyDeltaFromYmd(dKwh, static_cast<int>(s_meta.last_ymd));
+      } else {
+        s_meta.day_kwh[0] += dKwh;
+        markMetaDirty();
+        s_histGen++;
+      }
+    }
   }
 }
 
@@ -318,6 +507,8 @@ void climateEnergyClearHistory(void) {
   // Jen remove + malé meta — ne přepisovat 7× denní buffer (zasekává flash/OTA).
   storageClearEnergyHistory();
   storageSaveEnergyMeta(&s_meta, sizeof(s_meta));
+  s_allowMetaPersist = true;
+  s_day0AppliedSeasonKwh = 0.0f;
   s_metaDirty = false;
   s_powerDirty = false;
   s_weekFullDirty = false;
@@ -338,6 +529,8 @@ void climateEnergyInit(void) {
   memset(&s_meta, 0, sizeof(s_meta));
   s_meta.magic = kMetaMagic;
   s_meta.version = kMetaVersion;
+  s_day0AppliedSeasonKwh = 0.0f;
+  s_allowMetaPersist = false;
 
   EnergyMeta loaded{};
   const bool metaOk = storageLoadEnergyMeta(&loaded, sizeof(loaded)) &&
@@ -348,9 +541,20 @@ void climateEnergyInit(void) {
       s_meta.version = kMetaVersion;
       markMetaDirty();
     }
+    // Po bootu: den už je v měsíci/sezóně (průběžný apply); gap tracker = dnes.
+    s_day0AppliedSeasonKwh = s_meta.day_kwh[0];
+    s_allowMetaPersist = true;
+    syncCurrentSeasonArchiveSlot();
+  } else if (!storageEnergyMetaKeyExists()) {
+    // První start — smíme založit meta.
+    s_allowMetaPersist = true;
+    markMetaDirty();
+    Serial.println("[ENERGY] no en_meta key — starting fresh counters");
   } else {
-    Serial.println("[ENERGY] no saved meta — starting empty counters");
-    storageSaveEnergyMeta(&s_meta, sizeof(s_meta));
+    // Klíč je, ale nečitelný — nepřepisuj flash.
+    Serial.println(
+        "[ENERGY] en_meta unreadable — RAM empty, leave flash untouched");
+    s_allowMetaPersist = false;
   }
 
   uint32_t nz = 0;
@@ -367,29 +571,41 @@ void climateEnergyInit(void) {
       }
     }
   }
+  uint32_t day0Nz = 0;
+  if (s_weekPower) {
+    for (int i = 0; i < ENERGY_MINUTES_PER_DAY; ++i) {
+      if (s_weekPower[i] != 0) {
+        ++day0Nz;
+      }
+    }
+  }
   s_histGen++;
   Serial.printf(
-      "[ENERGY] init meta=%d e_prev=%lu Wh season=%ld week_nz=%lu\n",
+      "[ENERGY] init meta=%d e_prev=%lu Wh season=%ld week_nz=%lu day0_nz=%lu\n",
       metaOk ? 1 : 0, (unsigned long)s_meta.e_prev_wh,
-      (long)s_meta.season_year, (unsigned long)nz);
+      (long)s_meta.season_year, (unsigned long)nz, (unsigned long)day0Nz);
 }
 
 void climateEnergyTick(void) {
   if (netOtaIsBusy()) {
     return;
   }
+  // Jednou po Wi‑Fi: smazat staré en_p2..en_p6 (ne při load/boot — shazuje SDIO).
+  if (!s_prunedOldWeekDays && netWifiIsConnected() && !netWifiIsBusy()) {
+    storagePruneEnergyWeekPowerOldDays();
+    s_prunedOldWeekDays = true;
+  }
   struct tm t{};
   const bool haveTime = localNow(&t);
   if (haveTime) {
     const int ymd = ymdFromTm(t);
     if (s_meta.last_ymd != 0 && ymd != s_meta.last_ymd) {
-      rollDay(ymd);
+      syncDayToToday(ymd);
     } else if (s_meta.day_ymd[0] == 0) {
       s_meta.day_ymd[0] = ymd;
       s_meta.last_ymd = ymd;
       markMetaDirty();
     }
-    ensureYearSlot(t.tm_year + 1900);
     ensureSeason(climateEnergySeasonYear(t.tm_year + 1900, t.tm_mon + 1));
   }
   tickAuxHeat(haveTime ? &t : nullptr);
@@ -406,12 +622,16 @@ void climateEnergyOnSample(uint16_t avgPowerW, float energyKwh, bool energyReset
       haveTime ? (t.tm_hour * 60 + t.tm_min) : -1;
 
   if (s_weekPower && minuteOfDay >= 0 && minuteOfDay < ENERGY_MINUTES_PER_DAY) {
-    if (s_meta.day_ymd[0] == 0 && haveTime) {
-      s_meta.day_ymd[0] = ymdFromTm(t);
-      s_meta.last_ymd = s_meta.day_ymd[0];
-    }
+    // Nejdřív srovnej den — jinak body padají do včerejšího bufferu.
+    syncDayToToday(ymdFromTm(t));
     const uint16_t prev = s_weekPower[minuteOfDay];
-    uint16_t cell = s_powerW;
+    const uint16_t prevW = (uint16_t)(prev & ENERGY_PWR_W_MASK);
+    // PWR je ~1×/min průměr; při více vzorcích drž peak minuty (ne přepsat 0 W).
+    uint16_t cellW = s_powerW;
+    if (prevW > cellW) {
+      cellW = prevW;
+    }
+    uint16_t cell = cellW;
     if (s_auxOn || (prev & ENERGY_PWR_AUX_BIT) != 0) {
       cell = (uint16_t)(cell | ENERGY_PWR_AUX_BIT);
     }
@@ -426,23 +646,41 @@ void climateEnergyOnSample(uint16_t avgPowerW, float energyKwh, bool energyReset
   }
 
   float deltaKwh = 0.0f;
+  bool prevAdvanced = false;
   if (!s_meta.have_prev) {
     s_meta.e_prev_wh = energyWh;
     s_meta.have_prev = 1;
     markMetaDirty();
+    prevAdvanced = true;
   } else if (energyReset || energyWh < s_meta.e_prev_wh) {
     // Po resetu: nová hodnota = spotřeba od nuly
     deltaKwh = (float)energyWh / 1000.0f;
     s_meta.e_prev_wh = energyWh;
     markMetaDirty();
+    prevAdvanced = true;
   } else if (energyWh != s_meta.e_prev_wh) {
     deltaKwh = (float)(energyWh - s_meta.e_prev_wh) / 1000.0f;
-    s_meta.e_prev_wh = energyWh;
-    markMetaDirty();
   }
 
-  if (haveTime && deltaKwh > kWhEps) {
-    applyDelta(deltaKwh, t);
+  if (deltaKwh > kWhEps) {
+    if (haveTime) {
+      applyDeltaWithTm(deltaKwh, t);
+    } else {
+      const int ymd = static_cast<int>(s_meta.day_ymd[0]);
+      if (ymd > 0) {
+        applyDeltaFromYmd(deltaKwh, ymd);
+      } else if (s_meta.last_ymd > 0) {
+        applyDeltaFromYmd(deltaKwh, static_cast<int>(s_meta.last_ymd));
+      } else {
+        s_meta.day_kwh[0] += deltaKwh;
+        markMetaDirty();
+        s_histGen++;
+      }
+    }
+    if (!prevAdvanced) {
+      s_meta.e_prev_wh = energyWh;
+      markMetaDirty();
+    }
   }
 
   // Flash zápis ne tady (UART RX / UI) — climateEnergyTick()
@@ -477,7 +715,23 @@ float climateEnergyMonthKwh(void) {
   return s_meta.season_month_kwh[idx];
 }
 
-float climateEnergyYearKwh(void) { return s_meta.year_kwh[0]; }
+float climateEnergySeasonTotalKwh(void) { return sumSeasonMonthsKwh(); }
+
+float climateEnergyYearKwh(void) { return climateEnergySeasonTotalKwh(); }
+
+const char* climateEnergySeasonMonthLabel(void) {
+  static const char* kNames[ENERGY_SEASON_MONTHS] = {
+      "Zář", "Říj", "Lis", "Pro", "Led", "Úno", "Bře", "Dub", "Kvě"};
+  struct tm t{};
+  if (!localNow(&t)) {
+    return "-";
+  }
+  const int idx = climateEnergySeasonMonthIndex(t.tm_mon + 1);
+  if (idx < 0) {
+    return "mimo sezónu";
+  }
+  return kNames[idx];
+}
 
 bool climateEnergyDayPowerGet(int dayOffset, const uint16_t** outSamples,
                               float* outDayKwh, int* outYmd) {

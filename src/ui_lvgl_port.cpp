@@ -201,6 +201,7 @@ void uiLvglInit() {
   uiEezInitSignalLeds();
   uiEezNtpLabelInit();
   uiEezMbLabelInit();
+  uiEezMbLabelInit();
   uiEezPoruchaInit();
   uiTouchVisualInit();
   s_lastTickMs = millis();

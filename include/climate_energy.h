@@ -37,8 +37,14 @@ bool climateEnergyIsOk(void);
 uint16_t climateEnergyPowerW(void);
 bool climateEnergyAuxHeatOn(void);
 float climateEnergyTodayKwh(void);
+/** kWh v aktuálním kalendářním měsíci (jen topné období zář–kvě). */
 float climateEnergyMonthKwh(void);
+/** Součet 9 měsíců aktuální topné sezóny (zář…kvě). */
+float climateEnergySeasonTotalKwh(void);
+/** @deprecated alias — použij climateEnergySeasonTotalKwh. */
 float climateEnergyYearKwh(void);
+/** Krátký název měsíce pro UI („Říj“) nebo „mimo sezónu“. */
+const char* climateEnergySeasonMonthLabel(void);
 
 /** dayOffset: 0 = dnes, 1 = včera, … max 6. */
 bool climateEnergyDayPowerGet(int dayOffset, const uint16_t** outSamples,

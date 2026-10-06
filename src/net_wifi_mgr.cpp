@@ -30,6 +30,9 @@ char s_credSsid[33] = "";
 char s_credPass[65] = "";
 
 constexpr unsigned long kConnectTimeoutMs = 30000;
+constexpr unsigned long kRetryAfterFailMs = 15000;
+
+unsigned long s_failStartedMs = 0;
 
 void setStatus(const char* text) {
   strncpy(s_status, text ? text : "", sizeof(s_status));
@@ -66,18 +69,20 @@ bool compileTimeWifiOk() {
 }
 
 bool loadCredentials() {
-  // wifi_config.h má prioritu — po migraci NVS / vymazání hesel vždy funguje.
+  // Nejdřív NVS (uložené z UI) — wifi_config.h jen jako fallback.
+  if (storageLoadWifiCredentials(s_credSsid, sizeof(s_credSsid), s_credPass,
+                                 sizeof(s_credPass))) {
+    if (s_credSsid[0] != '\0') {
+      return true;
+    }
+  }
+
   if (compileTimeWifiOk()) {
     strncpy(s_credSsid, WIFI_SSID, sizeof(s_credSsid) - 1);
     s_credSsid[sizeof(s_credSsid) - 1] = '\0';
     strncpy(s_credPass, WIFI_PASSWORD, sizeof(s_credPass) - 1);
     s_credPass[sizeof(s_credPass) - 1] = '\0';
     return true;
-  }
-
-  if (storageLoadWifiCredentials(s_credSsid, sizeof(s_credSsid), s_credPass,
-                                 sizeof(s_credPass))) {
-    return s_credSsid[0] != '\0';
   }
 
   s_credSsid[0] = '\0';
@@ -121,8 +126,14 @@ void startConnect() {
   }
 
   ensureWifiPins();
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true, true);
+  // Tab5 C6 (esp_hosted): disconnect(wifioff=true) shodí SDIO a begin() pak
+  // hlásí esp_hosted_init failed / STA enable failed.
+  if (WiFi.getMode() != WIFI_STA) {
+    WiFi.mode(WIFI_STA);
+    delay(50);
+  }
+  WiFi.disconnect(false, false);
+  delay(20);
 
   setStatus("Připojování...");
   strncpy(s_ssid, s_credSsid, sizeof(s_ssid) - 1);
@@ -130,7 +141,14 @@ void startConnect() {
   strncpy(s_ip, "---", sizeof(s_ip));
 
   Serial.printf("[NET] Wi-Fi pripojuji k '%s'\n", s_credSsid);
-  WiFi.begin(s_credSsid, s_credPass);
+  const bool ok = WiFi.begin(s_credSsid, s_credPass);
+  if (!ok) {
+    Serial.println("[NET] Wi-Fi begin() FAIL (esp_hosted?)");
+    s_phase = WifiPhase::kFailed;
+    s_failStartedMs = millis();
+    setStatus("Wi-Fi init fail");
+    return;
+  }
 
   s_phase = WifiPhase::kConnecting;
   s_connectStartedMs = millis();
@@ -170,6 +188,7 @@ void netWifiInit() {
 
   if (s_enabled) {
     WiFi.mode(WIFI_STA);
+    delay(80);
     setStatus("Pripraveno");
     s_phase = WifiPhase::kIdle;
 
@@ -185,7 +204,10 @@ void netWifiInit() {
     clearRuntimeNetworkInfo();
   }
 
-  storageSaveWifiEnabled(s_enabled);
+  // wifi_en neukládat při každém bootu — flash + SDIO Wi‑Fi.
+  if (!storageWifiEnabledIsSet()) {
+    storageSaveWifiEnabled(s_enabled);
+  }
 }
 
 void netWifiSetEnabled(bool on) {
@@ -194,7 +216,7 @@ void netWifiSetEnabled(bool on) {
 
   if (!on) {
     ensureWifiPins();
-    WiFi.disconnect(true, true);
+    WiFi.disconnect(true, false);
     WiFi.mode(WIFI_OFF);
     s_phase = WifiPhase::kOff;
     setStatus("Vypnuto");
@@ -290,24 +312,39 @@ void netWifiTick() {
     return;
   }
 
+  // Po failu zkus znovu — jinak zůstane wifi=0 navždy.
+  if (s_phase == WifiPhase::kFailed || s_phase == WifiPhase::kIdle) {
+    if (s_phase == WifiPhase::kFailed &&
+        (millis() - s_failStartedMs) < kRetryAfterFailMs) {
+      return;
+    }
+    if (netWifiHasCredentials()) {
+      startConnect();
+    }
+    return;
+  }
+
   if (s_phase != WifiPhase::kConnecting) { return; }
 
   if (millis() - s_connectStartedMs >= kConnectTimeoutMs) {
     s_phase = WifiPhase::kFailed;
+    s_failStartedMs = millis();
     s_connected = false;
     setStatus("Timeout připojení");
     Serial.println("[NET] Wi-Fi timeout");
-    WiFi.disconnect(true, true);
+    WiFi.disconnect(false, false);
     return;
   }
 
   wl_status_t st = WiFi.status();
   if (st == WL_NO_SSID_AVAIL) {
     s_phase = WifiPhase::kFailed;
+    s_failStartedMs = millis();
     setStatus("Sit nenalezena");
     Serial.println("[NET] Wi-Fi: SSID nenalezeno");
   } else if (st == WL_CONNECT_FAILED) {
     s_phase = WifiPhase::kFailed;
+    s_failStartedMs = millis();
     setStatus("Spatne heslo");
     Serial.println("[NET] Wi-Fi: pripojeni selhalo");
   }

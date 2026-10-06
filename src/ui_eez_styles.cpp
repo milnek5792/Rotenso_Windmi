@@ -18,7 +18,7 @@ void init_style_btn_run_MAIN_DEFAULT(lv_style_t *style) {
     lv_style_set_text_color(style, lv_color_hex(0x000000));
     lv_style_set_radius(style, 8);
     lv_style_set_text_align(style, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_text_font(style, &lv_font_montserrat_18);
+    lv_style_set_text_font(style, &ui_font_font_cs_16);
     lv_style_set_border_width(style, 0);
 };
 
@@ -67,7 +67,7 @@ void init_style_btn_stop_MAIN_DEFAULT(lv_style_t *style) {
     lv_style_set_text_color(style, lv_color_hex(0x636366));
     lv_style_set_radius(style, 8);
     lv_style_set_text_align(style, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_text_font(style, &lv_font_montserrat_18);
+    lv_style_set_text_font(style, &ui_font_font_cs_16);
     lv_style_set_border_width(style, 0);
 };
 
@@ -150,7 +150,7 @@ void init_style_btn_menu_MAIN_DEFAULT(lv_style_t *style) {
     lv_style_set_text_color(style, lv_color_hex(0xffffff));
     lv_style_set_radius(style, 0);
     lv_style_set_text_align(style, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_text_font(style, &lv_font_montserrat_18);
+    lv_style_set_text_font(style, &ui_font_font_cs_16);
     lv_style_set_border_width(style, 0);
 };
 
@@ -183,7 +183,7 @@ void init_style_btn_tichy_MAIN_DEFAULT(lv_style_t *style) {
     lv_style_set_text_color(style, lv_color_hex(0xffffff));
     lv_style_set_radius(style, 6);
     lv_style_set_text_align(style, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_text_font(style, &lv_font_montserrat_14);
+    lv_style_set_text_font(style, &ui_font_font_cs_16);
     lv_style_set_border_width(style, 0);
 };
 
@@ -244,7 +244,7 @@ void remove_style_btn1(lv_obj_t *obj) {
 //
 
 void init_style_text_24_MAIN_DEFAULT(lv_style_t *style) {
-    lv_style_set_text_font(style, &lv_font_montserrat_14);
+    lv_style_set_text_font(style, &ui_font_font_cs_24);
     lv_style_set_text_color(style, lv_color_hex(0x8e8e93));
     lv_style_set_text_align(style, LV_TEXT_ALIGN_LEFT);
 };

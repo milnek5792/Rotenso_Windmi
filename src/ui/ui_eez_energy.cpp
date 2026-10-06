@@ -45,8 +45,8 @@ constexpr int kMinPerPoint = ENERGY_MINUTES_PER_DAY / kChartPoints;  // 5
 constexpr int kYTicks = 5;
 
 const lv_font_t* kFont = &ui_font_font_cs_24;
+const lv_font_t* kFontSummary = &ui_font_font_cs_28;
 const lv_font_t* kFontHour = &lv_font_montserrat_14;
-const lv_font_t* kFontCount = &lv_font_montserrat_32;
 bool s_created = false;
 int s_dayOffset = 0;
 uint32_t s_lastGen = 0;
@@ -569,8 +569,6 @@ void refreshMonthChart() {
   if (!energyObj.ser_month || !energyObj.chart_month) {
     return;
   }
-  // TČ max ~3 kW → ~2000 kWh/měsíc; pevné měřítko pro porovnání měsíců.
-  constexpr int32_t kMonthYCapKwh = 2000;
 
   float vals[ENERGY_SEASON_MONTHS];
   float dataMax = 0.0f;
@@ -581,9 +579,25 @@ void refreshMonthChart() {
     }
   }
 
-  int32_t yMax = kMonthYCapKwh;
-  if (dataMax > (float)kMonthYCapKwh) {
-    yMax = ((int32_t)(dataMax + 99.0f) / 100) * 100;
+  // Dynamické měřítko — pevných 2000 kWh dělalo z 11 kWh neviditelný sloupec.
+  int32_t yMax = 20;
+  if (dataMax > 0.0f) {
+    const float padded = dataMax * 1.25f;
+    if (padded <= 20.0f) {
+      yMax = 20;
+    } else if (padded <= 50.0f) {
+      yMax = 50;
+    } else if (padded <= 100.0f) {
+      yMax = 100;
+    } else if (padded <= 200.0f) {
+      yMax = 200;
+    } else if (padded <= 500.0f) {
+      yMax = 500;
+    } else if (padded <= 1000.0f) {
+      yMax = 1000;
+    } else {
+      yMax = ((int32_t)(padded + 99.0f) / 100) * 100;
+    }
   }
 
   lv_chart_set_range(energyObj.chart_month, LV_CHART_AXIS_PRIMARY_Y, 0, yMax);
@@ -591,6 +605,10 @@ void refreshMonthChart() {
     int32_t v = (int32_t)(vals[i] + 0.5f);
     if (v < 0) {
       v = 0;
+    }
+    // Tiny non-zero still visible as at least 1 chart unit when scale is large
+    if (vals[i] > 0.05f && v < 1) {
+      v = 1;
     }
     if (v > yMax) {
       v = yMax;
@@ -604,7 +622,9 @@ void refreshMonthChart() {
       continue;
     }
     char buf[16];
-    if (vals[i] >= 100.0f) {
+    if (vals[i] < 0.05f) {
+      snprintf(buf, sizeof(buf), "0");
+    } else if (vals[i] >= 100.0f) {
       snprintf(buf, sizeof(buf), "%.0f", (double)vals[i]);
     } else {
       snprintf(buf, sizeof(buf), "%.1f", (double)vals[i]);
@@ -617,27 +637,36 @@ void refreshMonthChart() {
 }
 
 void refreshSummaryAndYears() {
-  char buf[160];
-  // Součty z NVS hned; příkon = PZEM (+3 kW el. topení) nebo jen el. topení
+  char buf[200];
+  const char* monLbl = climateEnergySeasonMonthLabel();
+  const float monKwh = climateEnergyMonthKwh();
+  const int seasonY = climateEnergyCurrentSeasonYear();
+  char seasonSpan[16];
+  if (seasonY > 0) {
+    snprintf(seasonSpan, sizeof(seasonSpan), "%d/%02d", seasonY,
+             (seasonY + 1) % 100);
+  } else {
+    snprintf(seasonSpan, sizeof(seasonSpan), "-");
+  }
+  const float seasonKwh = climateEnergySeasonTotalKwh();
+  // Součty z NVS; měsíc = slot v topné sezóně (ne kalendářní rok)
   if (climateEnergyIsOk() || climateEnergyAuxHeatOn()) {
     snprintf(buf, sizeof(buf),
-             "Příkon %u W   Dnes %.2f kWh   Měsíc %.1f kWh   Rok %.1f kWh",
+             "Příkon %u W   Dnes %.2f kWh   %s %.1f kWh   Sezóna %s %.1f kWh",
              (unsigned)climateEnergyPowerW(),
-             (double)climateEnergyTodayKwh(),
-             (double)climateEnergyMonthKwh(),
-             (double)climateEnergyYearKwh());
+             (double)climateEnergyTodayKwh(), monLbl, (double)monKwh,
+             seasonSpan, (double)seasonKwh);
   } else {
     snprintf(buf, sizeof(buf),
-             "Příkon — W   Dnes %.2f kWh   Měsíc %.1f kWh   Rok %.1f kWh",
-             (double)climateEnergyTodayKwh(),
-             (double)climateEnergyMonthKwh(),
-             (double)climateEnergyYearKwh());
+             "Příkon - W   Dnes %.2f kWh   %s %.1f kWh   Sezóna %s %.1f kWh",
+             (double)climateEnergyTodayKwh(), monLbl, (double)monKwh,
+             seasonSpan, (double)seasonKwh);
   }
   setLabelIfChanged(energyObj.lbl_summary, buf);
 
-  char ybuf[192];
+  char ybuf[220];
   size_t n = 0;
-  n += (size_t)snprintf(ybuf + n, sizeof(ybuf) - n, "Roky: ");
+  n += (size_t)snprintf(ybuf + n, sizeof(ybuf) - n, "Sezóny: ");
   bool any = false;
   for (int i = 0; i < ENERGY_YEAR_SLOTS; ++i) {
     int year = 0;
@@ -645,12 +674,13 @@ void refreshSummaryAndYears() {
     if (!climateEnergyYearGet(i, &year, &kwh)) {
       continue;
     }
+    // Slot 0 = aktuální sezóna (živá); 1+ = uzavřené.
     any = true;
-    n += (size_t)snprintf(ybuf + n, sizeof(ybuf) - n, "%d %.1f  ", year,
-                          (double)kwh);
+    n += (size_t)snprintf(ybuf + n, sizeof(ybuf) - n, "%d/%02d %.1f  ", year,
+                          (year + 1) % 100, (double)kwh);
   }
   if (!any) {
-    snprintf(ybuf, sizeof(ybuf), "Roky: -");
+    snprintf(ybuf, sizeof(ybuf), "Sezóny: -");
   }
   setLabelIfChanged(energyObj.lbl_years, ybuf);
 }
@@ -683,9 +713,11 @@ void uiEnergyCreate(void) {
   energyObj.lbl_summary =
       makeLabel(energyObj.screen, kMargin, kMargin + kBtnH + 4, kW - 2 * kMargin,
                 "---", kColMuted);
+  lv_obj_set_style_text_font(energyObj.lbl_summary, kFontSummary,
+                             LV_PART_MAIN | LV_STATE_DEFAULT);
 
-  const int yearsH = 40;
-  const int topY = kMargin + kBtnH + 4 + 30;
+  const int yearsH = 44;
+  const int topY = kMargin + kBtnH + 4 + 36;
   const int bottomY = kH - kMargin - yearsH;
   const int stackH = bottomY - topY - kGap;
   const int powerH = stackH * 58 / 100;
@@ -821,7 +853,7 @@ void uiEnergyCreate(void) {
   for (int i = 0; i < ENERGY_SEASON_MONTHS; ++i) {
     s_lblMonthVal[i] = makeLabel(s_monthPanel, kPad, mChartY + 2, 40, "0",
                                  kColOrange);
-    lv_obj_set_style_text_font(s_lblMonthVal[i], kFontCount,
+    lv_obj_set_style_text_font(s_lblMonthVal[i], kFontSummary,
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_lblMonthVal[i], LV_TEXT_ALIGN_CENTER,
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -835,10 +867,10 @@ void uiEnergyCreate(void) {
 
   energyObj.lbl_years =
       makeLabel(energyObj.screen, kMargin, kH - kMargin - yearsH + 4,
-                kW - 2 * kMargin, "Roky: -", kColText);
-  lv_obj_set_style_text_font(energyObj.lbl_years, kFontCount,
+                kW - 2 * kMargin, "Sezóny: -", kColText);
+  lv_obj_set_style_text_font(energyObj.lbl_years, kFontSummary,
                              LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_text_font(energyObj.lbl_day_kwh, kFontCount,
+  lv_obj_set_style_text_font(energyObj.lbl_day_kwh, kFontSummary,
                              LV_PART_MAIN | LV_STATE_DEFAULT);
 
   s_created = true;

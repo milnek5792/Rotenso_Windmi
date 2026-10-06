@@ -26,6 +26,7 @@ constexpr uint32_t kColGreen = 0x30D158u;
 constexpr uint32_t kColOrange = 0xFF9F0Au;
 
 const lv_font_t* kFont = &ui_font_font_cs_24;
+const lv_font_t* kFontTitle = &ui_font_font_cs_28;
 
 void styleField(lv_obj_t* obj) {
   lv_obj_set_style_bg_color(obj, lv_color_hex(kColPanel), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -179,7 +180,7 @@ void uiBleMacFormCreate(void) {
 
   bleMacFormObj.lbl_title = lv_label_create(scr);
   lv_label_set_text(bleMacFormObj.lbl_title, "SwitchBot MAC (pokoj)");
-  lv_obj_set_style_text_font(bleMacFormObj.lbl_title, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(bleMacFormObj.lbl_title, kFontTitle, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(bleMacFormObj.lbl_title, lv_color_hex(kColText),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_align(bleMacFormObj.lbl_title, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -200,7 +201,7 @@ void uiBleMacFormCreate(void) {
   bleMacFormObj.keyboard = lv_keyboard_create(scr);
   lv_obj_set_size(bleMacFormObj.keyboard, 1280, 360);
   lv_obj_align(bleMacFormObj.keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_set_style_text_font(bleMacFormObj.keyboard, &lv_font_montserrat_24, LV_PART_ITEMS);
+  lv_obj_set_style_text_font(bleMacFormObj.keyboard, &ui_font_font_cs_24, LV_PART_ITEMS);
   lv_obj_set_style_bg_color(bleMacFormObj.keyboard, lv_color_hex(kColPanel),
                             LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_color(bleMacFormObj.keyboard, lv_color_hex(0x2C2C2Eu), LV_PART_ITEMS);

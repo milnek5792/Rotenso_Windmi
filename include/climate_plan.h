@@ -59,6 +59,8 @@ extern PlanTydenConfig g_planConfig;
 void climatePlanInit(void);
 void climatePlanTick(void);
 void climatePlanSave(void);
+void climatePlanRequestSave(void);
+void climatePlanFlushPendingSave(void);
 void climatePlanSetDefaults(void);
 
 const PlanTydenConfig* climatePlanGetConfig(void);

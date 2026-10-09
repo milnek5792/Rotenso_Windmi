@@ -28,6 +28,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
 #include <string.h>
 #include <strings.h>
 #include <math.h>
@@ -37,6 +38,13 @@
 namespace {
 
 static const char* TAG = "MQTT";
+
+/** RX mimo PubSubClient callback — publish/loop uvnitř callbacku shazuje příkazy. */
+struct MqttRxMsg {
+  char topic[48];
+  char payload[64];
+};
+QueueHandle_t s_rxQ = nullptr;
 
 void logHeap(const char* where) {
   APP_SLOG("[MQTT] heap %s: free=%u maxblk=%u dma_max=%u dma_free=%u psram=%u\n",
@@ -460,10 +468,8 @@ void bumpWatch(uint32_t holdMs = MQTT_WATCH_IDLE_MS) {
   publishWatchState(true);
   if (!was) {
     startTeleStaggered();
-  } else {
-    // Watch už běžel — stejně znovu pošli LED (retained mohlo zůstat OFF).
-    publishLedSignals(true);
   }
+  // Nepublikovat LED flood při každém cmd — dřív to přes reentrant loop() žralo RX.
 }
 
 void watchOff(bool clearTopics = true) {
@@ -969,11 +975,36 @@ void handleIncoming(const char* topic, int topicLen, const char* data, int dataL
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  handleIncoming(topic, topic ? (int)strlen(topic) : 0,
-                 reinterpret_cast<const char*>(payload), (int)length);
+  if (!topic || !s_rxQ) {
+    return;
+  }
+  MqttRxMsg rx{};
+  strncpy(rx.topic, topic, sizeof(rx.topic) - 1);
+  const unsigned n =
+      length < sizeof(rx.payload) - 1u ? length : sizeof(rx.payload) - 1u;
+  if (payload && n > 0) {
+    memcpy(rx.payload, payload, n);
+  }
+  rx.payload[n] = '\0';
+  if (xQueueSend(s_rxQ, &rx, 0) != pdTRUE) {
+    ESP_LOGW(TAG, "RX queue full — drop %s", rx.topic);
+  }
 }
 
-void applyPendingCommands() {}
+void drainRxQueue() {
+  if (!s_rxQ) {
+    return;
+  }
+  MqttRxMsg rx{};
+  while (xQueueReceive(s_rxQ, &rx, 0) == pdTRUE) {
+    handleIncoming(rx.topic, (int)strlen(rx.topic), rx.payload,
+                   (int)strlen(rx.payload));
+  }
+}
+
+void applyPendingCommands() {
+  drainRxQueue();
+}
 
 bool s_displayHeldForTls = false;
 TaskHandle_t s_asyncSuspended = nullptr;
@@ -1111,13 +1142,9 @@ void fillClientId() {
 }
 
 bool subscribeAll() {
+  // Jeden wildcard = méně SUB slotů + spolehlivější doručení cmd/*.
   static const char* const kTopics[] = {
-      MQTT_TOPIC_CMD_WATCH,
-      MQTT_TOPIC_CMD_POWER,
-      MQTT_TOPIC_CMD_SETPOINT,
-      MQTT_TOPIC_CMD_MODE,
-      MQTT_TOPIC_CMD_COMPRESSOR,
-      MQTT_TOPIC_CMD_QUIET,
+      MQTT_BASE "/cmd/#",
   };
   for (size_t i = 0; i < sizeof(kTopics) / sizeof(kTopics[0]); ++i) {
     if (!s_mqtt.subscribe(kTopics[i])) {
@@ -1325,6 +1352,7 @@ void mqttWorker(void* /*arg*/) {
         if (s_connected) {
           // Vždy loop — jinak keepalive umře a dostaneme -4 při reconnectu
           s_mqtt.loop();
+          drainRxQueue();
           const bool linked = s_mqtt.connected() && (s_mqtt.state() == MQTT_CONNECTED);
           if (!linked) {
             // Po UI resume bývá krátký šum — ale stop()/assumeUp=0 = opravdu mrtvé
@@ -1418,6 +1446,9 @@ void netMqttReserveTlsMemory() {
 }
 
 void netMqttInit() {
+  if (!s_rxQ) {
+    s_rxQ = xQueueCreate(12, sizeof(MqttRxMsg));
+  }
   s_enabled = true;
   s_connected = false;
   s_wantConnect = true;

@@ -349,35 +349,23 @@ function applyMqttEvent(ev) {
 }
 
 function adjustSetpoint(delta) {
+  // Jen +/- jako Tab — nikdy absolutní hodnota (lámalo SP při plánovém útlumu).
   const sign = delta > 0 ? '+' : '-';
-  let payload = sign;
-  let label =
-    state.regMode === 'equitherm'
-      ? `korekce ${sign}`
-      : `setpoint ${sign}`;
+  const label =
+    state.regMode === 'equitherm' ? `korekce ${sign}` : `setpoint ${sign}`;
 
-  // Pokoj: jen +/- (0.5 °C na Tabu). Absolutní z tele lámalo SP při plánovém útlumu.
-  if (state.regMode === 'room' && typeof state.setpoint === 'number') {
-    const next =
-      Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
-    payload = sign;
-    label = `setpoint ${sign}`;
-    state.setpoint = next;
-  } else if (state.regMode === 'equitherm') {
-    const next = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);
-    state.eqOffset = next;
-  } else if (
-    state.regMode === 'water' &&
-    typeof state.setpoint === 'number'
-  ) {
-    const next = Math.round(state.setpoint + (delta > 0 ? 1 : -1));
-    payload = String(next);
-    label = `setpoint ${payload}`;
-    state.setpoint = next;
+  if (!sendCmd('setpoint', sign, label)) {
+    return;
   }
 
-  if (!sendCmd('setpoint', payload, label)) {
-    return;
+  // Optimistický UI preview; tele z Tabu přepíše.
+  if (state.regMode === 'room' && typeof state.setpoint === 'number') {
+    state.setpoint =
+      Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
+  } else if (state.regMode === 'equitherm') {
+    state.eqOffset = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);
+  } else if (state.regMode === 'water' && typeof state.setpoint === 'number') {
+    state.setpoint = Math.round(state.setpoint + (delta > 0 ? 1 : -1));
   }
   render();
 }

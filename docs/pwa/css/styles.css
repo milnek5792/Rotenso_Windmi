@@ -286,6 +286,8 @@ body {
   cursor: pointer;
   flex: 0 1 auto;
   min-width: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: transform 0.08s, background 0.15s;
 }
 
@@ -516,6 +518,8 @@ body {
   letter-spacing: 0.05em;
   cursor: pointer;
   color: #fff;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn-start {

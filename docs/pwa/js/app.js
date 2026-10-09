@@ -1,6 +1,6 @@
 /** Windmi PWA — ovládání přes MQTT (WSS). */
 
-import { MqttBridge } from './mqtt-client.js?v=w2h';
+import { MqttBridge } from './mqtt-client.js?v=w2i';
 
 const STORAGE_KEY = 'windmi-pwa-settings';
 const MQTT_AUTO_KEY = 'windmi-pwa-mqtt-auto';
@@ -247,11 +247,24 @@ function formatOffset(v) {
 }
 
 function requireMqtt() {
-  if (mqtt.isConnected()) {
+  if (mqtt.isConnected() || mqtt.sessionActive()) {
     return true;
   }
   flashStatus('Nejdřív připoj MQTT v Nastavení');
   return false;
+}
+
+function sendCmd(suffix, payload, okLabel) {
+  if (!requireMqtt()) {
+    return false;
+  }
+  const rc = mqtt.publishCmd(suffix, payload);
+  if (rc === 'fail') {
+    flashStatus('MQTT neodpovídá — znovu Připojit');
+    return false;
+  }
+  flashStatus(rc === 'queued' ? `… ${okLabel}` : `→ ${okLabel}`);
+  return true;
 }
 
 function applyMqttEvent(ev) {
@@ -336,34 +349,43 @@ function applyMqttEvent(ev) {
 }
 
 function adjustSetpoint(delta) {
-  if (!requireMqtt()) {
-    return;
-  }
-  mqtt.publishCmd('setpoint', delta > 0 ? '+' : '-');
+  const sign = delta > 0 ? '+' : '-';
   const label =
     state.regMode === 'equitherm'
-      ? `korekce ${delta > 0 ? '+' : '-'}`
-      : `setpoint ${delta > 0 ? '+' : '-'}`;
-  flashStatus(`→ ${label}`);
+      ? `korekce ${sign}`
+      : `setpoint ${sign}`;
+  if (!sendCmd('setpoint', sign, label)) {
+    return;
+  }
+  // Optimisticky posuň SP na UI (Tab potvrdí přes tele/temp_set).
+  if (typeof state.setpoint === 'number' && Number.isFinite(state.setpoint)) {
+    if (state.regMode === 'room') {
+      state.setpoint = Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
+    } else if (state.regMode === 'equitherm') {
+      const next = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);
+      state.eqOffset = next;
+    } else {
+      state.setpoint = Math.round(state.setpoint + (delta > 0 ? 1 : -1));
+    }
+    render();
+  }
 }
 
 function setRegMode(mode) {
-  if (!requireMqtt()) {
+  const m = mode === 'equitherm' || mode === 'water' ? mode : 'room';
+  if (!sendCmd('mode', m, `mode ${m}`)) {
     return;
   }
-  const m = mode === 'equitherm' || mode === 'water' ? mode : 'room';
-  mqtt.publishCmd('mode', m);
   state.regMode = m;
-  flashStatus(`→ mode ${m}`);
   render();
 }
 
 function setPower(on) {
-  if (!requireMqtt()) {
+  if (!sendCmd('power', on ? 'ON' : 'OFF', `power ${on ? 'ON' : 'OFF'}`)) {
     return;
   }
-  mqtt.publishCmd('power', on ? 'ON' : 'OFF');
-  flashStatus(`→ power ${on ? 'ON' : 'OFF'}`);
+  state.power = on;
+  render();
 }
 
 function flashStatus(msg) {
@@ -544,13 +566,35 @@ function bindNav() {
   });
 }
 
+function bindTap(el, fn) {
+  if (!el) {
+    return;
+  }
+  let last = 0;
+  const run = (ev) => {
+    ev.preventDefault();
+    const now = Date.now();
+    if (now - last < 280) {
+      return;
+    }
+    last = now;
+    fn();
+  };
+  el.addEventListener('click', run);
+  el.addEventListener('pointerup', (ev) => {
+    if (ev.pointerType === 'touch' || ev.pointerType === 'pen') {
+      run(ev);
+    }
+  });
+}
+
 function bindControls() {
-  $('#btn-minus').addEventListener('click', () => adjustSetpoint(-1));
-  $('#btn-plus').addEventListener('click', () => adjustSetpoint(1));
-  $('#btn-start').addEventListener('click', () => setPower(true));
-  $('#btn-stop').addEventListener('click', () => setPower(false));
+  bindTap($('#btn-minus'), () => adjustSetpoint(-1));
+  bindTap($('#btn-plus'), () => adjustSetpoint(1));
+  bindTap($('#btn-start'), () => setPower(true));
+  bindTap($('#btn-stop'), () => setPower(false));
   document.querySelectorAll('.mode-row .chip').forEach((btn) => {
-    btn.addEventListener('click', () => setRegMode(btn.dataset.mode));
+    bindTap(btn, () => setRegMode(btn.dataset.mode));
   });
 }
 
@@ -565,7 +609,8 @@ function bindSettings() {
     const host = $('#cfg-host').value.trim();
     const user = $('#cfg-user').value.trim();
     const password = $('#cfg-pass').value;
-    const prefix = $('#cfg-prefix').value.trim() || 'windmi';
+    const prefix = mqtt.normalizePrefix($('#cfg-prefix').value);
+    $('#cfg-prefix').value = prefix;
     if (!host) {
       state.mqttStatus = 'error';
       state.mqttError = 'Zadej URL brokeru (WSS)';
@@ -589,11 +634,15 @@ function tryAutoConnect() {
   }
   const saved = loadSettings();
   if (saved.host && saved.user && saved.password) {
+    const prefix = mqtt.normalizePrefix(saved.prefix);
+    if (prefix !== saved.prefix) {
+      saveSettings({ prefix });
+    }
     mqtt.connect({
       url: saved.host,
       user: saved.user,
       password: saved.password,
-      prefix: saved.prefix || 'windmi',
+      prefix,
     });
   }
 }
@@ -630,7 +679,7 @@ function registerSw() {
   purgeStaleWorkersAndCaches()
     .catch(() => {})
     .finally(() => {
-      navigator.serviceWorker.register('./sw.js?v=w2h').catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=w2i').catch(() => {});
     });
 }
 
@@ -640,9 +689,18 @@ function init() {
   bindSettings();
   startStaleWatch();
   render();
-  window.addEventListener('beforeunload', () => {
+  // Jen watch OFF při opravdovém odchodu — ne full disconnect (mobilní bfcache/resume).
+  window.addEventListener('pagehide', (ev) => {
+    if (ev.persisted) {
+      return;
+    }
     if (mqtt.isConnected()) {
-      mqtt.disconnect(true);
+      mqtt.publishWatch(false);
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && mqtt.isConnected()) {
+      mqtt.publishWatch(true);
     }
   });
   registerSw();

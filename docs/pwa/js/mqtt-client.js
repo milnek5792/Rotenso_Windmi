@@ -11,6 +11,9 @@ const TELE_NA = '___';
  */
 const SUBSCRIBE_FILTERS = ['availability', 'tele/#'];
 
+/** Fronta příkazů přes krátký reconnect (mobilní PWA často dropne WS). */
+const MAX_PENDING_CMDS = 8;
+
 export class MqttBridge {
   constructor(onState) {
     this.onState = onState;
@@ -23,6 +26,7 @@ export class MqttBridge {
     this.hydrateTimer = null;
     this.closing = false;
     this.userStopped = false;
+    this.pendingCmds = [];
   }
 
   sessionActive() {
@@ -40,6 +44,13 @@ export class MqttBridge {
     return `${this.prefix}/${suffix}`;
   }
 
+  normalizePrefix(prefix) {
+    return String(prefix || 'windmi')
+      .trim()
+      .replace(/\/+$/, '')
+      .toLowerCase() || 'windmi';
+  }
+
   connect({ url, user, password, prefix }) {
     if (typeof mqtt === 'undefined') {
       this.setStatus('error', 'mqtt.js se nenačetlo');
@@ -47,7 +58,7 @@ export class MqttBridge {
     }
     this.disconnect(false);
     this.userStopped = false;
-    this.prefix = (prefix || 'windmi').replace(/\/+$/, '');
+    this.prefix = this.normalizePrefix(prefix);
     this.setStatus('connecting', '');
 
     const clientId = `WindmiPWA_${Math.random().toString(16).slice(2, 10)}`;
@@ -55,10 +66,11 @@ export class MqttBridge {
       username: user || undefined,
       password: password || undefined,
       clientId,
-      reconnectPeriod: 5000,
+      reconnectPeriod: 3000,
       connectTimeout: 20_000,
       keepalive: 45,
       clean: true,
+      queueQoSZero: true,
     });
 
     this.client.on('connect', () => {
@@ -67,6 +79,7 @@ export class MqttBridge {
       this.subscribeAll();
       this.publishWatch(true);
       this.startWatchKeepalive();
+      this.flushPendingCmds();
     });
 
     this.client.on('reconnect', () => {
@@ -98,6 +111,7 @@ export class MqttBridge {
   disconnect(sendWatchOff = true) {
     this.userStopped = true;
     this.closing = true;
+    this.pendingCmds = [];
     this.stopWatchKeepalive();
     this.endHydrate();
     if (this.client) {
@@ -177,7 +191,7 @@ export class MqttBridge {
       if (this.client?.connected) {
         this.publishWatch(true);
       }
-    }, 120_000);
+    }, 60_000);
   }
 
   stopWatchKeepalive() {
@@ -187,15 +201,53 @@ export class MqttBridge {
     }
   }
 
-  publishCmd(suffix, payload) {
-    if (!this.client?.connected) {
-      return false;
+  enqueuePending(suffix, payload) {
+    this.pendingCmds.push({ suffix, payload });
+    while (this.pendingCmds.length > MAX_PENDING_CMDS) {
+      this.pendingCmds.shift();
     }
-    this.client.publish(this.topic(`cmd/${suffix}`), String(payload), { qos: 0 });
+  }
+
+  flushPendingCmds() {
+    if (!this.client?.connected || this.pendingCmds.length === 0) {
+      return;
+    }
+    const batch = this.pendingCmds.splice(0, this.pendingCmds.length);
+    for (const cmd of batch) {
+      this.publishCmdNow(cmd.suffix, cmd.payload);
+    }
+  }
+
+  publishCmdNow(suffix, payload) {
+    const topic = this.topic(`cmd/${suffix}`);
+    this.client.publish(topic, String(payload), { qos: 1 }, (err) => {
+      if (err) {
+        console.warn('[MQTT] publish fail', topic, err);
+        this.enqueuePending(suffix, payload);
+      }
+    });
     if (suffix !== 'watch') {
       this.publishWatch(true);
     }
-    return true;
+  }
+
+  /**
+   * Pošle cmd/* (qos 1). Při krátkém výpadku frontuje a odešle po reconnectu.
+   * @returns {'ok'|'queued'|'fail'}
+   */
+  publishCmd(suffix, payload) {
+    if (this.userStopped) {
+      return 'fail';
+    }
+    if (this.client?.connected) {
+      this.publishCmdNow(suffix, payload);
+      return 'ok';
+    }
+    if (this.sessionActive()) {
+      this.enqueuePending(suffix, payload);
+      return 'queued';
+    }
+    return 'fail';
   }
 
   handleMessage(topic, raw, retained = false) {
@@ -277,9 +329,6 @@ export class MqttBridge {
         break;
       case 'tele/compressor':
         patch.compressor = parseOnOff(msg);
-        if (typeof console !== 'undefined') {
-          console.debug('[PWA] compressor', msg, '→', patch.compressor);
-        }
         break;
       case 'tele/lin':
         patch.lin = parseOnOff(msg);

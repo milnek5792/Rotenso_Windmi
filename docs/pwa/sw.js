@@ -1,10 +1,11 @@
-const CACHE = 'windmi-pwa-w2-v9';
+const CACHE = 'windmi-pwa-w2-v10';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/app.js',
   './js/mqtt-client.js',
+  './js/mqtt.min.js',
   './manifest.webmanifest',
   './icons/icon-192.svg',
   './icons/icon-512.svg',

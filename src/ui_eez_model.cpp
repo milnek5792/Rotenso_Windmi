@@ -168,8 +168,8 @@ void uiEezSyncFromBus() {
   const bool pendingOff = mMbPowerPending && !mMbPowerWantOn;
   const bool tcBezi = maA0 && lgJeTcProvoz(b2, b3);
 
-  // CHOD = jen potvrzený provoz z 002DH (ne pending START — LIN leftover)
-  uiEez.sig_chod = runOn;
+  // CHOD = session START (pending nebo potvrzený běh). LED čerpadla = sig_cerpadlo.
+  uiEez.sig_chod = (runOn || pendingOn) && !pendingOff;
 
   // b2/b3 = syntetika z Modbus (pump/flow/run, komp, defrost, IBH1)
   uiEez.sig_cerpadlo = maA0 && lgJeCerpadloZap(b2);

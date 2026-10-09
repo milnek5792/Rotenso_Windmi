@@ -582,20 +582,14 @@ function bindTap(el, fn) {
     return;
   }
   let last = 0;
-  const run = (ev) => {
+  el.addEventListener('click', (ev) => {
     ev.preventDefault();
     const now = Date.now();
-    if (now - last < 280) {
+    if (now - last < 250) {
       return;
     }
     last = now;
     fn();
-  };
-  el.addEventListener('click', run);
-  el.addEventListener('pointerup', (ev) => {
-    if (ev.pointerType === 'touch' || ev.pointerType === 'pen') {
-      run(ev);
-    }
   });
 }
 

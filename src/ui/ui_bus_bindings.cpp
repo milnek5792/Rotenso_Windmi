@@ -205,7 +205,7 @@ void provedStart() {
     mMbPowerPending = true;
     mMbPowerWantOn = true;
     lgModelUnlock();
-    uiEez.sig_chod = true;
+    // sig_chod až po 002DH — ne zapalovat při pending
     uiEez.stav_tc = UI_STAV_PRESTART;
     uiEez.sp_pending = t;
     uiEez.sp_pending_ms = millis();
@@ -227,7 +227,6 @@ void provedStart() {
       pozadavekNaZapis = true;
     }
     lgModelUnlock();
-    uiEez.sig_chod = true;
     uiEez.stav_tc = UI_STAV_BEH;
     uiEez.sp_pending = t;
     uiEez.sp_pending_ms = millis();
@@ -250,7 +249,7 @@ void provedStart() {
   mMbPowerWantOn = true;
   lgModelUnlock();
 
-  uiEez.sig_chod = true;
+  // sig_chod až po potvrzení running mode z TČ
   uiEez.stav_tc = UI_STAV_PRESTART;
   uiEez.sp_pending = t;
   uiEez.sp_pending_ms = millis();

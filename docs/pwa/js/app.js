@@ -392,11 +392,8 @@ function setRegMode(mode) {
 }
 
 function setPower(on) {
-  if (!sendCmd('power', on ? 'ON' : 'OFF', `power ${on ? 'ON' : 'OFF'}`)) {
-    return;
-  }
-  state.power = on;
-  render();
+  // Stav power až z tele (Tab rozsvítí CHOD po potvrzení 002DH), ne optimisticky.
+  sendCmd('power', on ? 'ON' : 'OFF', `power ${on ? 'ON' : 'OFF'}`);
 }
 
 function flashStatus(msg) {

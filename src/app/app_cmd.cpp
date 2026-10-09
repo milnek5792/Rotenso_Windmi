@@ -254,6 +254,11 @@ void appCmdDrainCtrl(void) {
   AppMsg msg{};
   static uint32_t s_lastHmiCtrlMs = 0;
 
+  // Sloučit MQTT/HMI +/- do jednoho delta — méně PID/NVS při burstu z PWA.
+  bool haveDelta = false;
+  AppMsg deltaMsg{};
+  int32_t deltaSum = 0;
+
   while (xQueueReceive(s_q, &msg, 0) == pdTRUE) {
     if (!isCtrlMsg(msg)) {
       if (heldN < 16) {
@@ -262,6 +267,33 @@ void appCmdDrainCtrl(void) {
         ESP_LOGW(TAG, "held overflow — drop ui cmd=%u", (unsigned)msg.cmd);
       }
       continue;
+    }
+
+    if (msg.cmd == APP_CMD_SETPOINT_DELTA) {
+      if (!haveDelta) {
+        deltaMsg = msg;
+        deltaSum = msg.arg;
+        haveDelta = true;
+      } else if (deltaMsg.src == msg.src) {
+        deltaSum += msg.arg;
+      } else {
+        deltaMsg.arg = deltaSum;
+        if (deltaMsg.arg != 0) {
+          uiBusProcessAppMsg(&deltaMsg);
+        }
+        deltaMsg = msg;
+        deltaSum = msg.arg;
+      }
+      continue;
+    }
+
+    if (haveDelta) {
+      deltaMsg.arg = deltaSum;
+      if (deltaMsg.arg != 0) {
+        uiBusProcessAppMsg(&deltaMsg);
+      }
+      haveDelta = false;
+      deltaSum = 0;
     }
 
     if (msg.cmd == APP_CMD_HMI_ACTION) {
@@ -276,6 +308,13 @@ void appCmdDrainCtrl(void) {
     }
 
     uiBusProcessAppMsg(&msg);
+  }
+
+  if (haveDelta) {
+    deltaMsg.arg = deltaSum;
+    if (deltaMsg.arg != 0) {
+      uiBusProcessAppMsg(&deltaMsg);
+    }
   }
 
   requeueHeld(held, heldN);

@@ -19,6 +19,7 @@
 #include "net_wifi_mgr.h"
 
 #include "src/net_mqtt_client.h"
+#include "src/net_ota.h"
 #include "src/net_sdio_arbiter.h"
 #include "src/ui_eez_model.h"
 #include "src/ui_ui_lvgl.h"
@@ -112,15 +113,17 @@ void loop() {
     // I bez Modbus — fronta HMI/MQTT (včetně room SP) musí běžet.
     appCmdDrainCtrl();
   }
-  // NVS flush ne během Wi‑Fi connect — flash erase shazuje SDIO C6.
-  if (!netWifiIsBusy()) {
+  // NVS flush ne při Wi‑Fi/TLS/OTA — flash erase shazuje SDIO C6 (Tab5 crash).
+  if (!netWifiIsBusy() && !netSdioTlsBusy() && !netOtaIsBusy()) {
     uiBusFlushDeferredStorage();
   }
 
 #if LG_USE_EEZ_LVGL
   uiTouchTab5Poll();
   uiDisplayTick();
-  uiDisplayFlushPendingStorage();
+  if (!netWifiIsBusy() && !netSdioTlsBusy() && !netOtaIsBusy()) {
+    uiDisplayFlushPendingStorage();
+  }
 #endif
 
   uiSerialMonitorPoll();

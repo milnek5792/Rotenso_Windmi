@@ -193,6 +193,27 @@ void provedStart() {
     return;
   }
 
+  // Session ON / pending, ale TČ ještě neběží → znovu zařadit zápis 002C (ne STOP)
+  if ((uzDrzeny || mMbPowerPending) && !uzBezi) {
+    lgModelLock();
+    novaCilovaTeplota = t;
+    mCilova = t;
+    tcPozadavekZap = true;
+    lgNastavDrzenyStav(t, true);
+    pozadavekZmenaStartu = true;
+    pozadavekNaZapis = true;
+    mMbPowerPending = true;
+    mMbPowerWantOn = true;
+    lgModelUnlock();
+    uiEez.sig_chod = true;
+    uiEez.stav_tc = UI_STAV_PRESTART;
+    uiEez.sp_pending = t;
+    uiEez.sp_pending_ms = millis();
+    storageRequestSaveTcSession(true, t);
+    ESP_LOGI(TAG, "START retry -> Modbus 002C=Heat T=%u", (unsigned)t);
+    return;
+  }
+
   // Už běží na TČ — jen adoptovat session + případně SP
   if (uzBezi && !mMbPowerPending) {
     lgModelLock();
@@ -336,6 +357,10 @@ void provedRoomSpZmena(float deltaC, UiSpSource src) {
     return;
   }
   climateRegulatorAdjustRoomSp(deltaC);
+  if (src == UI_SP_SRC_HMI) {
+    climateRegulatorRequestImmediateTick();
+  }
+  potrebaObnovitDisplej = true;
   ESP_LOGI(TAG, "Auto room SP -> %.1f (src=%s)",
            (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }
@@ -346,6 +371,10 @@ void provedRoomSpAbs(float c, UiSpSource src) {
     return;
   }
   climateRegulatorSetRoomSp(c);
+  if (src == UI_SP_SRC_HMI) {
+    climateRegulatorRequestImmediateTick();
+  }
+  potrebaObnovitDisplej = true;
   ESP_LOGI(TAG, "Auto room SP abs -> %.1f (src=%s)",
            (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }

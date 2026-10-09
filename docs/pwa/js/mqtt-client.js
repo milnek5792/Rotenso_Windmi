@@ -220,7 +220,8 @@ export class MqttBridge {
 
   publishCmdNow(suffix, payload) {
     const topic = this.topic(`cmd/${suffix}`);
-    this.client.publish(topic, String(payload), { qos: 1 }, (err) => {
+    // qos 0 — qos 1 po pádu Tab5 znovu doručí burst a znovu ho shodí
+    this.client.publish(topic, String(payload), { qos: 0 }, (err) => {
       if (err) {
         console.warn('[MQTT] publish fail', topic, err);
         this.enqueuePending(suffix, payload);

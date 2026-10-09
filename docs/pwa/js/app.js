@@ -1,6 +1,6 @@
 /** Windmi PWA — ovládání přes MQTT (WSS). */
 
-import { MqttBridge } from './mqtt-client.js?v=w2i';
+import { MqttBridge } from './mqtt-client.js?v=w2j';
 
 const STORAGE_KEY = 'windmi-pwa-settings';
 const MQTT_AUTO_KEY = 'windmi-pwa-mqtt-auto';
@@ -350,25 +350,36 @@ function applyMqttEvent(ev) {
 
 function adjustSetpoint(delta) {
   const sign = delta > 0 ? '+' : '-';
-  const label =
+  let payload = sign;
+  let label =
     state.regMode === 'equitherm'
       ? `korekce ${sign}`
       : `setpoint ${sign}`;
-  if (!sendCmd('setpoint', sign, label)) {
+
+  // Absolutní SP (méně burstů než +/-) — Tab bere float v tele/cmd.
+  if (state.regMode === 'room' && typeof state.setpoint === 'number') {
+    const next =
+      Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
+    payload = next.toFixed(1);
+    label = `setpoint ${payload}`;
+    state.setpoint = next;
+  } else if (state.regMode === 'equitherm') {
+    const next = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);
+    state.eqOffset = next;
+  } else if (
+    state.regMode === 'water' &&
+    typeof state.setpoint === 'number'
+  ) {
+    const next = Math.round(state.setpoint + (delta > 0 ? 1 : -1));
+    payload = String(next);
+    label = `setpoint ${payload}`;
+    state.setpoint = next;
+  }
+
+  if (!sendCmd('setpoint', payload, label)) {
     return;
   }
-  // Optimisticky posuň SP na UI (Tab potvrdí přes tele/temp_set).
-  if (typeof state.setpoint === 'number' && Number.isFinite(state.setpoint)) {
-    if (state.regMode === 'room') {
-      state.setpoint = Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
-    } else if (state.regMode === 'equitherm') {
-      const next = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);
-      state.eqOffset = next;
-    } else {
-      state.setpoint = Math.round(state.setpoint + (delta > 0 ? 1 : -1));
-    }
-    render();
-  }
+  render();
 }
 
 function setRegMode(mode) {
@@ -679,7 +690,7 @@ function registerSw() {
   purgeStaleWorkersAndCaches()
     .catch(() => {})
     .finally(() => {
-      navigator.serviceWorker.register('./sw.js?v=w2i').catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=w2j').catch(() => {});
     });
 }
 

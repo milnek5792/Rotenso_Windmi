@@ -42,7 +42,8 @@ bool s_cfgSavePending = false;
 uint32_t s_cfgSaveRequestMs = 0;
 bool s_roomSpSavePending = false;
 uint32_t s_roomSpSaveRequestMs = 0;
-constexpr uint32_t kNvsIdleBeforeFlushMs = 1500;
+/** Delší idle — NVS flash při MQTT/SDIO shazuje Tab5. */
+constexpr uint32_t kNvsIdleBeforeFlushMs = 8000;
 bool s_haveEqBase = false;
 uint8_t s_lastWrittenC = 0;
 bool s_haveWritten = false;
@@ -391,7 +392,8 @@ void climateRegulatorSetRoomSp(float c) {
   s_cfg.room_sp_c = clampf(c, 18.0f, 24.0f);
   s_roomSpSavePending = true;
   s_roomSpSaveRequestMs = millis();
-  climateRegulatorRequestImmediateTick();
+  // Bez ImmediateTick — MQTT +/- by jinak hned psalo SP vody + NVS a shazovalo SDIO.
+  // HMI volá climateRegulatorRequestImmediateTick() samo.
 }
 
 float climateRegulatorRoomSpEffective(void) {

@@ -1,5 +1,4 @@
-# Nasadí docs/pwa na GitHub Pages.
-# Primární URL: /  (kořen). /w2/ a /x/ zůstávají kvůli starým záložkám.
+# Nasadí docs/pwa na GitHub Pages (kořen = PWA, /w2/ redirect, /x/ reset).
 name: Deploy PWA
 
 on:
@@ -37,92 +36,14 @@ jobs:
       - name: Build site root
         run: |
           set -euo pipefail
-          mkdir -p _site/w2 _site/x
-          # Primární: PWA v kořeni (https://…/Rotenso_Windmi/)
+          mkdir -p _site
           cp -a docs/pwa/. _site/
-          # Starý bookmark /w2/
-          cp -a docs/pwa/. _site/w2/
-          # Jekyll off
           touch _site/.nojekyll
-
           test -f _site/index.html
-          test -f _site/js/app.js
-          test -f _site/js/mqtt.min.js
           test -f _site/w2/index.html
-          ls -la _site _site/js _site/w2 | head -n 80
-
-          cat > _site/x/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="cs">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Windmi — prohlížeč</title>
-            <meta name="theme-color" content="#121214">
-            <style>
-              body{margin:0;min-height:100dvh;background:#121214;color:#e0e0e6;font-family:system-ui,sans-serif;padding:24px;line-height:1.45}
-              code,kbd{color:#64d2ff}
-              button,.btn{display:inline-block;margin:8px 8px 0 0;padding:12px 16px;border:0;border-radius:10px;background:#0a84ff;color:#fff;font-weight:700;text-decoration:none}
-              .btn2{background:#2c2c2e}
-              #mode{padding:10px 12px;border-radius:8px;background:#1a1a1f;border:1px solid #24242b;margin:12px 0}
-              #log{margin-top:16px;color:#8e8e93;font-size:.85rem;white-space:pre-wrap}
-              .ok{color:#30d158}.bad{color:#ff453a}
-            </style>
-          </head>
-          <body>
-            <h1>Kontrola instalace</h1>
-            <div id="mode">Zjišťuji…</div>
-            <p>Když je režim <b>standalone</b>, Chrome spouští starou nainstalovanou PWA. Bývá v <code>chrome://apps</code>.</p>
-            <ol>
-              <li>Do adresního řádku Chrome napiš <kbd>chrome://apps</kbd> a odstraň Windmi.</li>
-              <li>Nebo: Chrome → ⋮ → Nastavení → Aplikace.</li>
-              <li>Pak klepni níž na vymazání cache.</li>
-            </ol>
-            <button type="button" id="wipe">Vymazat SW + cache tohoto webu</button>
-            <a class="btn btn2" id="open" href="../">Otevřít Windmi v prohlížeči</a>
-            <div id="log"></div>
-            <script>
-              const mode = window.matchMedia('(display-mode: standalone)').matches
-                || window.matchMedia('(display-mode: fullscreen)').matches
-                || window.navigator.standalone === true;
-              const el = document.getElementById('mode');
-              el.innerHTML = mode
-                ? '<span class="bad">Režim: STANDALONE (otevřeno jako aplikace)</span>'
-                : '<span class="ok">Režim: prohlížeč (je vidět adresní řádek Chrome)</span>';
-              if (mode) {
-                document.getElementById('open').style.display = 'none';
-              }
-              document.getElementById('wipe').onclick = async () => {
-                const log = document.getElementById('log');
-                const lines = [];
-                const say = (m) => { lines.push(m); log.textContent = lines.join('\n'); };
-                try {
-                  if ('serviceWorker' in navigator) {
-                    for (const r of await navigator.serviceWorker.getRegistrations()) {
-                      await r.unregister();
-                      say('SW off: ' + r.scope);
-                    }
-                  }
-                  if (window.caches) {
-                    for (const k of await caches.keys()) {
-                      await caches.delete(k);
-                      say('cache: ' + k);
-                    }
-                  }
-                  localStorage.clear();
-                  sessionStorage.clear();
-                  say('storage cleared');
-                  say('Hotovo. Zavři Chrome úplně a otevři znovu tuto stránku.');
-                } catch (e) {
-                  say(String(e));
-                }
-              };
-            </script>
-          </body>
-          </html>
-          EOF
-
-          # /w2/ už má plnou PWA (kopie) — redirect není potřeba
+          test -f _site/x/index.html
+          test -f _site/js/mqtt.min.js
+          find _site -maxdepth 2 -type f | sort | head -n 40
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

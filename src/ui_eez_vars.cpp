@@ -100,7 +100,8 @@ extern "C" {
 
 const char* get_var_teplota_vody_set() {
   if (uiEez.rezim == UI_REZIM_AUTO) {
-    return fmtTempDeci(climateRegulatorRoomSpEffective());
+    // Stejná hodnota jako MQTT tele/temp_set (uživatelský SP, ne plánový útlum).
+    return fmtTempDeci(climateRegulatorGetConfig()->room_sp_c);
   }
   if (uiEez.rezim == UI_REZIM_EKVITERM) {
     RegulatorSnapshot snap{};

@@ -1,6 +1,6 @@
 /** Windmi PWA — ovládání přes MQTT (WSS). */
 
-import { MqttBridge } from './mqtt-client.js?v=w2k';
+import { MqttBridge } from './mqtt-client.js?v=w2l';
 
 const STORAGE_KEY = 'windmi-pwa-settings';
 const MQTT_AUTO_KEY = 'windmi-pwa-mqtt-auto';
@@ -348,8 +348,12 @@ function applyMqttEvent(ev) {
   }
 }
 
+function clampRoomSp(v) {
+  return Math.min(24, Math.max(18, Math.round(v * 2) / 2));
+}
+
 function adjustSetpoint(delta) {
-  // Jen +/- jako Tab — nikdy absolutní hodnota (lámalo SP při plánovém útlumu).
+  // Jen +/- jako Tab — nikdy absolutní hodnota.
   const sign = delta > 0 ? '+' : '-';
   const label =
     state.regMode === 'equitherm' ? `korekce ${sign}` : `setpoint ${sign}`;
@@ -358,10 +362,11 @@ function adjustSetpoint(delta) {
     return;
   }
 
-  // Optimistický UI preview; tele z Tabu přepíše.
+  // Optimistický UI preview; tele/temp_set z Tabu je autorita.
   if (state.regMode === 'room' && typeof state.setpoint === 'number') {
-    state.setpoint =
-      Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
+    state.setpoint = clampRoomSp(
+      state.setpoint + (delta > 0 ? 0.5 : -0.5),
+    );
   } else if (state.regMode === 'equitherm') {
     state.eqOffset = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);
   } else if (state.regMode === 'water' && typeof state.setpoint === 'number') {
@@ -702,7 +707,7 @@ function registerSw() {
   purgeStaleWorkersAndCaches()
     .catch(() => {})
     .finally(() => {
-      navigator.serviceWorker.register('./sw.js?v=w2k').catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=w2l').catch(() => {});
     });
 }
 

@@ -19,6 +19,8 @@ bool netMqttIsConnected();
 bool netMqttBootSettled(void);
 bool netMqttIsBusy(void);
 bool netMqttIsWatchActive(void);
+/** Po změně SP (HMI/MQTT) — hned republish tele/temp_set. */
+void netMqttNotifySetpointChanged(void);
 const char* netMqttStatus();
 const char* netMqttHost();
 

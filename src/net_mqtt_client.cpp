@@ -757,6 +757,11 @@ void telePublishChanges() {
       publishEqOffset();
     }
   }
+  // SP dřív než Tin/Tout — jinak fluktuace vodních teplot „vyhladoví“ tele/temp_set.
+  if (!tempOffline(setp) && !nearlyEq(setp, s_pub.setp)) {
+    publishSetpoint();
+    return;
+  }
   if (!tempOffline(outlet) && !nearlyEq(outlet, s_pub.outlet)) {
     publishOutlet(outlet);
     return;
@@ -771,10 +776,6 @@ void telePublishChanges() {
     if (publishTemp(MQTT_TOPIC_TELE_TEMP_OUTDOOR, outdoor)) {
       s_pub.outdoor = outdoor;
     }
-    return;
-  }
-  if (!tempOffline(setp) && !nearlyEq(setp, s_pub.setp)) {
-    publishSetpoint();
     return;
   }
   if (!tempOffline(uiEez.teplota_vnitrni) &&
@@ -1537,4 +1538,10 @@ bool netMqttIsWatchActive() {
 #else
   return false;
 #endif
+}
+
+void netMqttNotifySetpointChanged(void) {
+  // Vynutit republish při příštím telePublishChanges (i když watch právě doběhl).
+  s_pub.setp = -999.0f;
+  bumpWatch();
 }

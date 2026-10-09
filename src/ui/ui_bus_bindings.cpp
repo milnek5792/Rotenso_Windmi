@@ -13,6 +13,7 @@
 #include "storage_config_nvs.h"
 #include "src/ui_eez_model.h"
 #include "ui_eez_nav.h"
+#include "src/net_mqtt_client.h"
 
 #include <Arduino.h>
 #include <esp_log.h>
@@ -303,6 +304,7 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
     uiEez.sp_pending = nova;
     uiEez.sp_pending_ms = millis();
     potrebaObnovitDisplej = true;
+    netMqttNotifySetpointChanged();
 
     storageRequestSaveTcSession(cilovyZapnutoTab5, nova);
 
@@ -325,6 +327,7 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
   uiEez.sp_pending = nova;
   uiEez.sp_pending_ms = millis();
   potrebaObnovitDisplej = true;
+  netMqttNotifySetpointChanged();
 
   ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s zap=%d rezim=%s", (unsigned)nova,
            spSrcName(src), (int)zap, rezimName(uiEez.rezim));
@@ -362,6 +365,7 @@ void provedRoomSpZmena(float deltaC, UiSpSource src) {
     climateRegulatorRequestImmediateTick();
   }
   potrebaObnovitDisplej = true;
+  netMqttNotifySetpointChanged();
   ESP_LOGI(TAG, "Auto room SP -> %.1f (src=%s)",
            (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }
@@ -376,6 +380,7 @@ void provedRoomSpAbs(float c, UiSpSource src) {
     climateRegulatorRequestImmediateTick();
   }
   potrebaObnovitDisplej = true;
+  netMqttNotifySetpointChanged();
   ESP_LOGI(TAG, "Auto room SP abs -> %.1f (src=%s)",
            (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }

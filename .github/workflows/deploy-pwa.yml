@@ -1,4 +1,5 @@
-# Nasadí docs/pwa na GitHub Pages. /x/ = čistá stránka pro odinstalaci/cache.
+# Nasadí docs/pwa na GitHub Pages.
+# Primární URL: /  (kořen). /w2/ a /x/ zůstávají kvůli starým záložkám.
 name: Deploy PWA
 
 on:
@@ -35,8 +36,20 @@ jobs:
 
       - name: Build site root
         run: |
+          set -euo pipefail
           mkdir -p _site/w2 _site/x
+          # Primární: PWA v kořeni (https://…/Rotenso_Windmi/)
+          cp -a docs/pwa/. _site/
+          # Starý bookmark /w2/
           cp -a docs/pwa/. _site/w2/
+          # Jekyll off
+          touch _site/.nojekyll
+
+          test -f _site/index.html
+          test -f _site/js/app.js
+          test -f _site/js/mqtt.min.js
+          test -f _site/w2/index.html
+          ls -la _site _site/js _site/w2 | head -n 80
 
           cat > _site/x/index.html <<'EOF'
           <!DOCTYPE html>
@@ -46,7 +59,6 @@ jobs:
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Windmi — prohlížeč</title>
             <meta name="theme-color" content="#121214">
-            <!-- Žádný manifest = Chrome by to neměl brát jako nainstalovanou app -->
             <style>
               body{margin:0;min-height:100dvh;background:#121214;color:#e0e0e6;font-family:system-ui,sans-serif;padding:24px;line-height:1.45}
               code,kbd{color:#64d2ff}
@@ -60,14 +72,14 @@ jobs:
           <body>
             <h1>Kontrola instalace</h1>
             <div id="mode">Zjišťuji…</div>
-            <p>Když je režim <b>standalone</b>, Chrome spouští starou nainstalovanou PWA (i když ji v Aplikacích nevidíš). Bývá v <code>chrome://apps</code>.</p>
+            <p>Když je režim <b>standalone</b>, Chrome spouští starou nainstalovanou PWA. Bývá v <code>chrome://apps</code>.</p>
             <ol>
               <li>Do adresního řádku Chrome napiš <kbd>chrome://apps</kbd> a odstraň Windmi.</li>
               <li>Nebo: Chrome → ⋮ → Nastavení → Aplikace.</li>
               <li>Pak klepni níž na vymazání cache.</li>
             </ol>
             <button type="button" id="wipe">Vymazat SW + cache tohoto webu</button>
-            <a class="btn btn2" id="open" href="../w2/">Otevřít Windmi v prohlížeči</a>
+            <a class="btn btn2" id="open" href="../">Otevřít Windmi v prohlížeči</a>
             <div id="log"></div>
             <script>
               const mode = window.matchMedia('(display-mode: standalone)').matches
@@ -100,7 +112,7 @@ jobs:
                   localStorage.clear();
                   sessionStorage.clear();
                   say('storage cleared');
-                  say('Hotovo. Zavři Chrome úplně (odebrat z recent) a otevři znovu tuto stránku.');
+                  say('Hotovo. Zavři Chrome úplně a otevři znovu tuto stránku.');
                 } catch (e) {
                   say(String(e));
                 }
@@ -110,20 +122,7 @@ jobs:
           </html>
           EOF
 
-          cat > _site/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="cs">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Windmi</title>
-            <meta http-equiv="refresh" content="0; url=./x/">
-          </head>
-          <body>
-            <p><a href="./x/">Pokračovat</a></p>
-          </body>
-          </html>
-          EOF
+          # /w2/ už má plnou PWA (kopie) — redirect není potřeba
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -219,6 +219,10 @@ export class MqttBridge {
   }
 
   publishCmdNow(suffix, payload) {
+    // Watch dřív — Tab přepne do rychlé tele před power/setpoint.
+    if (suffix !== 'watch') {
+      this.publishWatch(true);
+    }
     const topic = this.topic(`cmd/${suffix}`);
     // qos 0 — qos 1 po pádu Tab5 znovu doručí burst a znovu ho shodí
     this.client.publish(topic, String(payload), { qos: 0 }, (err) => {
@@ -227,9 +231,6 @@ export class MqttBridge {
         this.enqueuePending(suffix, payload);
       }
     });
-    if (suffix !== 'watch') {
-      this.publishWatch(true);
-    }
   }
 
   /**

@@ -1,6 +1,6 @@
 /** Windmi PWA — ovládání přes MQTT (WSS). */
 
-import { MqttBridge } from './mqtt-client.js?v=w2j';
+import { MqttBridge } from './mqtt-client.js?v=w2k';
 
 const STORAGE_KEY = 'windmi-pwa-settings';
 const MQTT_AUTO_KEY = 'windmi-pwa-mqtt-auto';
@@ -380,8 +380,16 @@ function setRegMode(mode) {
 }
 
 function setPower(on) {
-  // Stav power až z tele (Tab rozsvítí CHOD po potvrzení 002DH), ne optimisticky.
-  sendCmd('power', on ? 'ON' : 'OFF', `power ${on ? 'ON' : 'OFF'}`);
+  if (!sendCmd('power', on ? 'ON' : 'OFF', on ? 'START' : 'STOP')) {
+    return;
+  }
+  // Okamžitá odezva UI; tele z Tabu potvrdí (power/pump).
+  state.power = on;
+  if (!on) {
+    state.pump = false;
+    state.compressor = false;
+  }
+  render();
 }
 
 function flashStatus(msg) {
@@ -522,6 +530,17 @@ function render() {
 
   renderLeds();
 
+  const btnStart = $('#btn-start');
+  const btnStop = $('#btn-stop');
+  if (btnStart) {
+    btnStart.classList.toggle('btn-power-on', !!state.power);
+    btnStart.setAttribute('aria-pressed', state.power ? 'true' : 'false');
+  }
+  if (btnStop) {
+    btnStop.classList.toggle('btn-power-on', !state.power && state.mqttConnected);
+    btnStop.setAttribute('aria-pressed', !state.power ? 'true' : 'false');
+  }
+
   const sessionActive = mqttSessionActive();
   $('#btn-connect').disabled = sessionActive;
   $('#btn-disconnect').disabled = !sessionActive;
@@ -567,14 +586,28 @@ function bindTap(el, fn) {
     return;
   }
   let last = 0;
-  el.addEventListener('click', (ev) => {
-    ev.preventDefault();
+  const run = (ev) => {
+    if (ev) {
+      ev.preventDefault();
+    }
     const now = Date.now();
-    if (now - last < 250) {
+    if (now - last < 350) {
       return;
     }
     last = now;
     fn();
+  };
+  // pointerup = spolehlivý tap na mobilu; click = klávesnice / desktop fallback
+  el.addEventListener('pointerup', (ev) => {
+    if (ev.button != null && ev.button !== 0) {
+      return;
+    }
+    run(ev);
+  });
+  el.addEventListener('click', (ev) => {
+    if (ev.detail === 0) {
+      run(ev);
+    }
   });
 }
 
@@ -669,7 +702,7 @@ function registerSw() {
   purgeStaleWorkersAndCaches()
     .catch(() => {})
     .finally(() => {
-      navigator.serviceWorker.register('./sw.js?v=w2j').catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=w2k').catch(() => {});
     });
 }
 

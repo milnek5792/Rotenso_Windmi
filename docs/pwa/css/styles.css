@@ -524,16 +524,29 @@ body {
 
 .btn-start {
   background: #1a3d24;
-  border: 1px solid #2d5a3a;
+  border: 2px solid #2d5a3a;
 }
 
 .btn-stop {
   background: #3d1a1a;
-  border: 1px solid #5a2d2d;
+  border: 2px solid #5a2d2d;
+}
+
+.btn-start.btn-power-on {
+  background: #14301c;
+  border-color: #30d158;
+  box-shadow: 0 0 14px rgba(48, 209, 88, 0.35);
+}
+
+.btn-stop.btn-power-on {
+  background: #301414;
+  border-color: #ff453a;
+  box-shadow: 0 0 14px rgba(255, 69, 58, 0.3);
 }
 
 .btn-power:active {
   opacity: 0.85;
+  transform: scale(0.98);
 }
 
 /* Settings */

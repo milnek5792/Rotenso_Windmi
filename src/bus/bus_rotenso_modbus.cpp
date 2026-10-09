@@ -49,7 +49,7 @@ uint8_t s_step = STEP_TEMPS;
 uint8_t s_cycle = 0;
 bool s_doSp = false;
 
-constexpr uint8_t kCfgQCap = 8;
+constexpr uint8_t kCfgQCap = 16;
 struct CfgWr {
   uint16_t addr;
   uint16_t value;
@@ -62,8 +62,14 @@ uint8_t s_cfgQCount = 0;
 /** Obrazovka konfigurace TČ — číst RW registry (jinak MVP jen live). */
 bool s_cfgScreen = false;
 bool s_cfgNeedPoll = false;
+uint32_t s_cfgPollAfterMs = 0;  // odložený poll po zápisu
 uint8_t s_cfgStep = 0;
 WindmiHpConfigSnap s_cfgAcc = {};
+/** Po úspěšném WR držet hodnotu, dokud holding nepotvrdí (nebo timeout). */
+bool s_cfgPending = false;
+uint16_t s_cfgPendingAddr = 0;
+uint16_t s_cfgPendingVal = 0;
+uint32_t s_cfgPendingUntilMs = 0;
 
 enum CfgStep : uint8_t {
   CFG_CTRL = 0,
@@ -309,6 +315,14 @@ void publishStatus() {
 }
 
 bool cfgQPush(uint16_t addr, uint16_t value) {
+  // Stejná adresa → přepsat (neplnit frontu opakovanými +/- / retry).
+  for (uint8_t i = 0; i < s_cfgQCount; ++i) {
+    const uint8_t idx = (uint8_t)((s_cfgQHead + i) % kCfgQCap);
+    if (s_cfgQ[idx].addr == addr) {
+      s_cfgQ[idx].value = value;
+      return true;
+    }
+  }
   if (s_cfgQCount >= kCfgQCap) {
     return false;
   }
@@ -347,7 +361,8 @@ bool processOneWrite() {
     if (want) {
       const uint16_t mode =
           wantOn ? (uint16_t)WINDMI_SET_HEAT : (uint16_t)WINDMI_SET_OFF;
-      APP_SLOG("[WM] WR MODE %u\n", (unsigned)mode);
+      Serial.printf("[WM] WR MODE %u (Heat=2/Off=0) SP=%u\n", (unsigned)mode,
+                    (unsigned)spC);
       if (!mbWriteSingle((uint16_t)WINDMI_REG_SETTING_MODE, mode)) {
         s_writeNextMs = millis() + 500u;
         return true;
@@ -402,11 +417,17 @@ bool processOneWrite() {
     CfgWr wr;
     if (cfgQPop(&wr)) {
       if (!mbWriteSingle(wr.addr, wr.value)) {
-        s_writeNextMs = millis() + 2000u;
-        cfgQPush(wr.addr, wr.value);  // zkus znovu později
+        s_writeNextMs = millis() + 1500u;
+        cfgQPush(wr.addr, wr.value);  // coalesce — nepřidá duplicitu
       } else {
         s_writeNextMs = 0;
-        s_cfgNeedPoll = true;  // po zápisu znovu načíst hodnoty z TČ
+        // Echo OK ≠ holding už má hodnotu — počkej, pak ověř.
+        s_cfgPending = true;
+        s_cfgPendingAddr = wr.addr;
+        s_cfgPendingVal = wr.value;
+        s_cfgPendingUntilMs = millis() + 6000u;
+        s_cfgPollAfterMs = millis() + 1200u;
+        s_cfgNeedPoll = false;
         s_cfgStep = 0;
       }
       return true;
@@ -459,6 +480,11 @@ void runMode() {
   s_setting = be16(&buf[0]);
   s_running = be16(&buf[2]);
   publishStatus();
+  if (mMbPowerPending || s_setting != s_running) {
+    Serial.printf("[WM] MODE set=%u run=%u pending=%d wantOn=%d\n",
+                  (unsigned)s_setting, (unsigned)s_running, (int)mMbPowerPending,
+                  (int)mMbPowerWantOn);
+  }
   APP_SLOG("[WM] MODE set=%u run=%u\n", (unsigned)s_setting,
            (unsigned)s_running);
 }
@@ -521,15 +547,24 @@ void runQuiet() {
            (unsigned)s_flow, (unsigned)s_quiet);
 }
 
-void runAlarm() {
+bool readAlarmBlock(uint8_t fc, uint16_t* bmOut) {
   uint8_t buf[8];
-  if (!mbReadInput((uint16_t)WINDMI_REG_ALARM_BM1, (uint8_t)WINDMI_REG_ALARM_COUNT,
-                   buf)) {
-    return;
+  if (!mbReadRegs(fc, (uint16_t)WINDMI_REG_ALARM_BM1,
+                  (uint8_t)WINDMI_REG_ALARM_COUNT, buf, true)) {
+    return false;
   }
-  uint16_t bm[4];
   for (int i = 0; i < 4; ++i) {
-    bm[i] = be16(buf + (size_t)i * 2u);
+    bmOut[i] = be16(buf + (size_t)i * 2u);
+  }
+  return true;
+}
+
+void runAlarm() {
+  uint16_t bm[4] = {0, 0, 0, 0};
+  // Holding první, při fail Input (max 2 TX).
+  if (!readAlarmBlock((uint8_t)WINDMI_FC_HOLDING, bm) &&
+      !readAlarmBlock((uint8_t)WINDMI_FC_READ, bm)) {
+    return;
   }
   lgModelSetMbAlarms(bm);
   if ((bm[0] | bm[1] | bm[2] | bm[3]) != 0u) {
@@ -559,14 +594,21 @@ void runSp() {
 
 bool readCfgRegSoft(uint16_t addr, uint16_t* out) {
   uint8_t buf[2];
-  const unsigned long failBefore = s_fail;
-  if (!mbReadInput(addr, 1, buf)) {
-    if (s_fail > failBefore) {
-      --s_fail;  // optional cfg reg — nekazit live streak
-    }
+  // Jen Holding (0x03) — Input 0x04 po WR často vrací starou hodnotu a UI revertuje.
+  if (!mbReadRegs((uint8_t)WINDMI_FC_HOLDING, addr, 1, buf, true)) {
     return false;
   }
   *out = be16(buf);
+  // Dokud TČ nepotvrdí zápis, drž očekávanou hodnotu (ne starý holding/cache).
+  if (s_cfgPending && addr == s_cfgPendingAddr) {
+    if (*out == s_cfgPendingVal) {
+      s_cfgPending = false;
+    } else if ((int32_t)(millis() - s_cfgPendingUntilMs) < 0) {
+      *out = s_cfgPendingVal;
+    } else {
+      s_cfgPending = false;  // timeout — ber co TČ hlásí
+    }
+  }
   return true;
 }
 
@@ -773,7 +815,12 @@ void rotensoBusInit(void) {
   s_cfgQHead = s_cfgQTail = s_cfgQCount = 0;
   s_cfgScreen = false;
   s_cfgNeedPoll = false;
+  s_cfgPollAfterMs = 0;
   s_cfgStep = 0;
+  s_cfgPending = false;
+  s_cfgPendingAddr = 0;
+  s_cfgPendingVal = 0;
+  s_cfgPendingUntilMs = 0;
   memset(&s_cfgAcc, 0, sizeof(s_cfgAcc));
   s_ok = 0;
   s_fail = 0;
@@ -798,6 +845,12 @@ void rotensoBusTick(void) {
 
   if (processOneWrite()) {
     return;
+  }
+
+  if (s_cfgPollAfterMs != 0u && (int32_t)(millis() - s_cfgPollAfterMs) >= 0) {
+    s_cfgPollAfterMs = 0;
+    s_cfgNeedPoll = true;
+    s_cfgStep = 0;
   }
 
   if (runConfigStep()) {

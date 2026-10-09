@@ -207,7 +207,7 @@ void provedStart() {
     mMbPowerPending = true;
     mMbPowerWantOn = true;
     lgModelUnlock();
-    uiEez.sig_chod = true;
+    // CHOD až po run!=0 (002DH); tady jen fronta Heat
     uiEez.stav_tc = UI_STAV_PRESTART;
     uiEez.sp_pending = t;
     uiEez.sp_pending_ms = millis();
@@ -225,11 +225,10 @@ void provedStart() {
     tcPozadavekZap = true;
     lgNastavDrzenyStav(t, true);
     if (a0Sp != t) {
-      pozadavekZmenaStartu = false;
       pozadavekNaZapis = true;
+      // necháme pozadavekZmenaStartu jak je — neforcing false
     }
     lgModelUnlock();
-    uiEez.sig_chod = true;
     uiEez.stav_tc = UI_STAV_BEH;
     uiEez.sp_pending = t;
     uiEez.sp_pending_ms = millis();
@@ -252,11 +251,11 @@ void provedStart() {
   mMbPowerWantOn = true;
   lgModelUnlock();
 
-  uiEez.sig_chod = true;
   uiEez.stav_tc = UI_STAV_PRESTART;
   uiEez.sp_pending = t;
   uiEez.sp_pending_ms = millis();
 
+  // SP až po zařazení Heat — ImmediateTick nesmí zrušit 002C (viz provedTeplotaAbsolutni).
   if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
     climateRegulatorRequestImmediateTick();
   }
@@ -296,7 +295,7 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
     if (drzetStavAktivni) {
       cilovaTeplotaTab5 = nova;
     }
-    pozadavekZmenaStartu = false;
+    // Nesmí zrušit pending Heat/OFF — jinak START jen rozsvítí CHOD bez 002C.
     pozadavekNaZapis = true;
     lgModelUnlock();
 
@@ -337,8 +336,8 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
   }
 
   lgModelLock();
+  // Jen SP — ponech pozadavekZmenaStartu (Heat má prioritu v processOneWrite).
   pozadavekNaZapis = true;
-  pozadavekZmenaStartu = false;
   lgModelUnlock();
 }
 

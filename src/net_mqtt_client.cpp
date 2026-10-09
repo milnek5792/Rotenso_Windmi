@@ -284,8 +284,10 @@ void snapMqttSetpoint(float* setp) {
     return;
   }
   if (uiEez.rezim == UI_REZIM_AUTO) {
-    const float roomSp = climateRegulatorRoomSpEffective();
-    *setp = (roomSp >= 16.0f && roomSp <= 24.0f) ? roomSp : UI_TEPLOTA_NEPLATNA;
+    // Uživatelský SP (ne effective s plánovým útlumem) — jinak PWA abs. zápisy
+    // posouvají room_sp dolů a „nejde jít nad 18“.
+    const float roomSp = climateRegulatorGetConfig()->room_sp_c;
+    *setp = (roomSp >= 18.0f && roomSp <= 24.0f) ? roomSp : UI_TEPLOTA_NEPLATNA;
     return;
   }
   if (uiEez.rezim == UI_REZIM_EKVITERM) {

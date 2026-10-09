@@ -356,12 +356,12 @@ function adjustSetpoint(delta) {
       ? `korekce ${sign}`
       : `setpoint ${sign}`;
 
-  // Absolutní SP (méně burstů než +/-) — Tab bere float v tele/cmd.
+  // Pokoj: jen +/- (0.5 °C na Tabu). Absolutní z tele lámalo SP při plánovém útlumu.
   if (state.regMode === 'room' && typeof state.setpoint === 'number') {
     const next =
       Math.round((state.setpoint + (delta > 0 ? 0.5 : -0.5)) * 10) / 10;
-    payload = next.toFixed(1);
-    label = `setpoint ${payload}`;
+    payload = sign;
+    label = `setpoint ${sign}`;
     state.setpoint = next;
   } else if (state.regMode === 'equitherm') {
     const next = (state.eqOffset ?? 0) + (delta > 0 ? 1 : -1);

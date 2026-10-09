@@ -181,6 +181,8 @@ void provedStart() {
   lgModelUnlock();
 
   s_planSessionHold = false;
+  // Ruční START přebije plánové VYP (jinak další tick zase STOP).
+  climateRegulatorSetPlanStop(false);
 
   if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
     RegulatorSnapshot snap{};

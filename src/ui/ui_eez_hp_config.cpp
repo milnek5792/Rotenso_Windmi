@@ -8,6 +8,7 @@
 #include "src/ui_eez_fonts.h"
 #include "src/ui_eez_nav.h"
 
+#include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -124,12 +125,30 @@ const char* runModeName(uint16_t mode) {
   }
 }
 
+uint32_t s_busyUntilMs = 0;
+
+WindmiHpConfigSnap readCfg() {
+  WindmiHpConfigSnap cfg = {};
+  lgModelReadHpConfigSnap(&cfg);
+  return cfg;
+}
+
 void queueWrite(uint16_t addr, uint16_t value) {
   if (!rotensoBusQueueConfigWrite(addr, value)) {
     setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Fronta zápisu plná");
-  } else {
-    setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Zapisuji...");
+    return;
   }
+  setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Zapisuji...");
+  // Delší hold — poll až po WR + ~1.2 s (bus), ne hned (revert staré hodnoty).
+  s_busyUntilMs = millis() + 5000u;
+}
+
+/** Optimistic patch snap (hned po +/-), dokud nepřijde poll. */
+void patchCfg(void (*apply)(WindmiHpConfigSnap*)) {
+  WindmiHpConfigSnap c = readCfg();
+  apply(&c);
+  c.valid = true;
+  lgModelSetMbHpConfig(&c);
 }
 
 void onBack(lv_event_t* e) {
@@ -179,84 +198,194 @@ void adjustU16(uint16_t addr, uint16_t current, int delta, uint16_t lo,
   queueWrite(addr, (uint16_t)next);
 }
 
-WindmiHpConfigSnap readCfg() {
-  WindmiHpConfigSnap cfg = {};
-  lgModelReadHpConfigSnap(&cfg);
-  return cfg;
+/** Manuál: jen 1=kontakty, 2=WUI. 0 TČ odmítá a vrací 1. */
+uint16_t clampUiType(uint16_t v) {
+  if (v >= (uint16_t)WINDMI_UI_WIRED) {
+    return (uint16_t)WINDMI_UI_WIRED;
+  }
+  return (uint16_t)WINDMI_UI_CONTACTS;
 }
 
 void onUiTypeM(lv_event_t* e) {
   (void)e;
   const WindmiHpConfigSnap c = readCfg();
-  uint16_t cur =
-      (c.mask & 0x0100u) ? c.ui_type : (uint16_t)WINDMI_UI_WIRED;
-  // 2 → 1 → 0 → 2
-  uint16_t next = (cur == 0) ? (uint16_t)WINDMI_UI_WIRED : (uint16_t)(cur - 1u);
+  if (!(c.mask & 0x0100u)) {
+    rotensoBusRequestConfigPoll();
+    setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Nejdriv nacist (Obnovit)");
+    return;
+  }
+  // 2 → 1 → 2 (bez 0)
+  const uint16_t cur = clampUiType(c.ui_type);
+  const uint16_t next = (cur == (uint16_t)WINDMI_UI_WIRED)
+                            ? (uint16_t)WINDMI_UI_CONTACTS
+                            : (uint16_t)WINDMI_UI_WIRED;
   queueWrite((uint16_t)WINDMI_REG_UI_TYPE, next);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    const uint16_t cur = clampUiType(s->ui_type);
+    s->ui_type = (cur == (uint16_t)WINDMI_UI_WIRED)
+                     ? (uint16_t)WINDMI_UI_CONTACTS
+                     : (uint16_t)WINDMI_UI_WIRED;
+    s->mask |= 0x0100u;
+  });
 }
 void onUiTypeP(lv_event_t* e) {
   (void)e;
   const WindmiHpConfigSnap c = readCfg();
-  uint16_t cur =
-      (c.mask & 0x0100u) ? c.ui_type : (uint16_t)WINDMI_UI_NONE;
-  // 0 → 1 → 2 → 0
-  uint16_t next = (cur >= (uint16_t)WINDMI_UI_WIRED)
-                      ? (uint16_t)WINDMI_UI_NONE
-                      : (uint16_t)(cur + 1u);
+  if (!(c.mask & 0x0100u)) {
+    rotensoBusRequestConfigPoll();
+    setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Nejdriv nacist (Obnovit)");
+    return;
+  }
+  // 1 → 2 → 1
+  const uint16_t cur = clampUiType(c.ui_type);
+  const uint16_t next = (cur == (uint16_t)WINDMI_UI_CONTACTS)
+                            ? (uint16_t)WINDMI_UI_WIRED
+                            : (uint16_t)WINDMI_UI_CONTACTS;
   queueWrite((uint16_t)WINDMI_REG_UI_TYPE, next);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    const uint16_t cur = clampUiType(s->ui_type);
+    s->ui_type = (cur == (uint16_t)WINDMI_UI_CONTACTS)
+                     ? (uint16_t)WINDMI_UI_WIRED
+                     : (uint16_t)WINDMI_UI_CONTACTS;
+    s->mask |= 0x0100u;
+  });
 }
 
 void onMinOatM(lv_event_t* e) {
   (void)e;
   const WindmiHpConfigSnap c = readCfg();
+  if (!(c.mask & 0x08u)) {
+    rotensoBusRequestConfigPoll();
+    setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Nejdřív načíst (Obnovit)");
+    return;
+  }
   adjustX10((uint16_t)WINDMI_REG_MIN_OAT_HEAT, c.min_oat_heat_x10, -10, -260,
             100);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->min_oat_heat_x10 - 10;
+    if (n < -260) n = -260;
+    s->min_oat_heat_x10 = (int16_t)n;
+    s->mask |= 0x08u;
+  });
 }
 void onMinOatP(lv_event_t* e) {
   (void)e;
   const WindmiHpConfigSnap c = readCfg();
+  if (!(c.mask & 0x08u)) {
+    rotensoBusRequestConfigPoll();
+    setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Nejdřív načíst (Obnovit)");
+    return;
+  }
   adjustX10((uint16_t)WINDMI_REG_MIN_OAT_HEAT, c.min_oat_heat_x10, 10, -260,
             100);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->min_oat_heat_x10 + 10;
+    if (n > 100) n = 100;
+    s->min_oat_heat_x10 = (int16_t)n;
+    s->mask |= 0x08u;
+  });
 }
+bool requireMask(uint16_t bit) {
+  const WindmiHpConfigSnap c = readCfg();
+  if ((c.mask & bit) == 0u) {
+    rotensoBusRequestConfigPoll();
+    setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Nejdřív načíst (Obnovit)");
+    return false;
+  }
+  return true;
+}
+
 void onIbhOatM(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x40u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustX10((uint16_t)WINDMI_REG_IBH_OAT, c.ibh_oat_x10, -10, -200, 150);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->ibh_oat_x10 - 10;
+    if (n < -200) n = -200;
+    s->ibh_oat_x10 = (int16_t)n;
+    s->mask |= 0x40u;
+  });
 }
 void onIbhOatP(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x40u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustX10((uint16_t)WINDMI_REG_IBH_OAT, c.ibh_oat_x10, 10, -200, 150);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->ibh_oat_x10 + 10;
+    if (n > 150) n = 150;
+    s->ibh_oat_x10 = (int16_t)n;
+    s->mask |= 0x40u;
+  });
 }
 void onIbhWarmM(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x10u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustU16((uint16_t)WINDMI_REG_IBH_WARMUP, c.ibh_warmup_min, -1, 0, 60);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    if (s->ibh_warmup_min > 0) --s->ibh_warmup_min;
+    s->mask |= 0x10u;
+  });
 }
 void onIbhWarmP(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x10u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustU16((uint16_t)WINDMI_REG_IBH_WARMUP, c.ibh_warmup_min, 1, 0, 60);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    if (s->ibh_warmup_min < 60) ++s->ibh_warmup_min;
+    s->mask |= 0x10u;
+  });
 }
 void onIbhDtM(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x20u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustX10((uint16_t)WINDMI_REG_IBH_DELTA_T, c.ibh_delta_t_x10, -5, 0, 200);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->ibh_delta_t_x10 - 5;
+    if (n < 0) n = 0;
+    s->ibh_delta_t_x10 = (int16_t)n;
+    s->mask |= 0x20u;
+  });
 }
 void onIbhDtP(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x20u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustX10((uint16_t)WINDMI_REG_IBH_DELTA_T, c.ibh_delta_t_x10, 5, 0, 200);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->ibh_delta_t_x10 + 5;
+    if (n > 200) n = 200;
+    s->ibh_delta_t_x10 = (int16_t)n;
+    s->mask |= 0x20u;
+  });
 }
 void onPumpDtM(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x80u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustX10((uint16_t)WINDMI_REG_PUMP_DELTA_T, c.pump_delta_t_x10, -5, 0, 150);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->pump_delta_t_x10 - 5;
+    if (n < 0) n = 0;
+    s->pump_delta_t_x10 = (int16_t)n;
+    s->mask |= 0x80u;
+  });
 }
 void onPumpDtP(lv_event_t* e) {
   (void)e;
+  if (!requireMask(0x80u)) return;
   const WindmiHpConfigSnap c = readCfg();
   adjustX10((uint16_t)WINDMI_REG_PUMP_DELTA_T, c.pump_delta_t_x10, 5, 0, 150);
+  patchCfg([](WindmiHpConfigSnap* s) {
+    int32_t n = (int32_t)s->pump_delta_t_x10 + 5;
+    if (n > 150) n = 150;
+    s->pump_delta_t_x10 = (int16_t)n;
+    s->mask |= 0x80u;
+  });
 }
 
 void makeParamRow(lv_obj_t* panel, int y, int panelW, const char* title,
@@ -424,12 +553,12 @@ void uiHpConfigTick(void) {
 
   if (cfg.mask & 0x0100u) {
     const char* name = "?";
-    if (cfg.ui_type == WINDMI_UI_NONE) {
-      name = "bez";
-    } else if (cfg.ui_type == WINDMI_UI_CONTACTS) {
-      name = "kontakty";
+    if (cfg.ui_type == WINDMI_UI_CONTACTS) {
+      name = "kontakty";  // bez dratoveho WUI (Modbus OK)
     } else if (cfg.ui_type == WINDMI_UI_WIRED) {
-      name = "s WUI";
+      name = "WUI";
+    } else if (cfg.ui_type == WINDMI_UI_NONE) {
+      name = "neplatne->1";
     }
     snprintf(line, sizeof(line), "%s (%u)", name, (unsigned)cfg.ui_type);
   } else {
@@ -453,16 +582,15 @@ void uiHpConfigTick(void) {
   setLabelIfChanged(hpConfigObj.lbl_pump_dt, line);
 
   {
+    const bool busy = (int32_t)(millis() - s_busyUntilMs) < 0;
     const char* prev = lv_label_get_text(hpConfigObj.lbl_cfg_status);
     const bool keepBusy =
-        prev && (strncmp(prev, "Zapisuji", 8) == 0 ||
-                 strncmp(prev, "Fronta", 6) == 0 ||
-                 strncmp(prev, "Preset", 6) == 0 ||
-                 strncmp(prev, "Obnovuji", 8) == 0);
-    if (cfg.valid) {
-      setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Config OK");
-    } else if (!keepBusy) {
-      if (!rotensoBusIsReady() || rotensoBusOkCount() == 0) {
+        busy || (prev && (strncmp(prev, "Fronta", 6) == 0 ||
+                          strncmp(prev, "Nejdřív", 7) == 0));
+    if (!keepBusy) {
+      if (cfg.valid) {
+        setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Config OK");
+      } else if (!rotensoBusIsReady() || rotensoBusOkCount() == 0) {
         setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Čekám na Modbus...");
       } else {
         setLabelIfChanged(hpConfigObj.lbl_cfg_status, "Načítám registry...");
@@ -496,6 +624,18 @@ void uiHpConfigTick(void) {
   const bool oatOk = mVenkovniOk;
   lgModelUnlock();
 
+  WindmiAlarmSnap al{};
+  lgModelReadAlarmSnap(&al);
+  char alarmLine[64];
+  if (al.valid) {
+    snprintf(alarmLine, sizeof(alarmLine), "Alarm: %04X %04X %04X %04X%s",
+             (unsigned)al.bm[0], (unsigned)al.bm[1], (unsigned)al.bm[2],
+             (unsigned)al.bm[3],
+             ((al.bm[0] & (1u << 9)) != 0u) ? " E9!" : "");
+  } else {
+    snprintf(alarmLine, sizeof(alarmLine), "Alarm: (nečteno)");
+  }
+
   snprintf(
       liveBuf, sizeof(liveBuf),
       "Režim: %s (%u)\n"
@@ -505,6 +645,7 @@ void uiHpConfigTick(void) {
       "Průtok: %s%.2f m³/h\n"
       "IBH1: %s\n"
       "Quiet: %s\n"
+      "%s\n"
       "\n"
       "Venku: %s%.1f °C\n"
       "Tin: %s%.1f °C\n"
@@ -519,6 +660,7 @@ void uiHpConfigTick(void) {
       live.valid ? "" : "- ", live.valid ? (double)flow : 0.0,
       live.load_ok ? (ibh ? "ON" : "OFF") : "-",
       live.valid ? (live.quiet_night ? "ano" : "ne") : "-",
+      alarmLine,
       oatOk ? "" : "- ", oatOk ? (double)oat : 0.0,
       tinOk ? "" : "- ", tinOk ? (double)tin : 0.0,
       toutOk ? "" : "- ", toutOk ? (double)tout : 0.0,

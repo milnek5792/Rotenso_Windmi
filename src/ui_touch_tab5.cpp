@@ -45,8 +45,9 @@ constexpr int kMaxDriftPx = 55;
 constexpr TouchBtn kMainButtons[] = {
     {48, 120, 128, 128, "minus", action_akce_teplota_minus},
     {608, 120, 128, 128, "plus", action_akce_teplota_plus},
-    {865, 90, 195, 60, "start", action_akce_start_stop},
-    {1070, 90, 195, 60, "stop", action_akce_start_stop},
+    // Hitbox = skutečná velikost tlačítek (195×90); START/STOP odděleně (ne toggle).
+    {865, 90, 195, 90, "start", action_akce_start},
+    {1070, 90, 195, 90, "stop", action_akce_stop},
     {1024, 600, 256, 120, "menu", action_akce_menu},
 };
 

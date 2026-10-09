@@ -169,6 +169,7 @@ void uiEezRefreshPorucha(void) {
   char msg[sizeof(uiEez.porucha_text)] = "";
 
   // 1) Chyby z tepelného čerpadla (Modbus alarm bitmapy)
+  // WUI (0209=2) s připojeným ovladačem NENÍ porucha — E9 hlásí formatHpAlarms.
   if (formatHpAlarms(msg, sizeof(msg)) > 0) {
     // HP alarm má prioritu
   } else if (!lgMaCerstoA0()) {
@@ -207,7 +208,8 @@ void uiEezPoruchaInit(void) {
 
   s_lblTitle = lv_label_create(s_panel);
   lv_obj_set_pos(s_lblTitle, 4, 0);
-  lv_obj_set_style_text_font(s_lblTitle, &ui_font_font_cs_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+  // cs_24: 0x20–0x7F + 0xA0–0x17F (české diakritiky). cs_28 bez fallbacku → čtverečky.
+  lv_obj_set_style_text_font(s_lblTitle, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(s_lblTitle, lv_color_hex(kColTitle), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_label_set_text_static(s_lblTitle, "Poruchové hlášení");
 

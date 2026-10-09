@@ -562,7 +562,7 @@ void create_screen_main() {
             lv_obj_set_pos(obj, 865, 90);
             lv_obj_set_size(obj, 195, 90);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(obj, action_akce_start_stop, LV_EVENT_CLICKED, (void *)0);
+            lv_obj_add_event_cb(obj, action_akce_start, LV_EVENT_CLICKED, (void *)0);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             add_style_btn_run(obj);
@@ -592,7 +592,7 @@ void create_screen_main() {
             lv_obj_set_pos(obj, 1070, 90);
             lv_obj_set_size(obj, 195, 90);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(obj, action_akce_start_stop, LV_EVENT_CLICKED, (void *)0);
+            lv_obj_add_event_cb(obj, action_akce_stop, LV_EVENT_CLICKED, (void *)0);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             add_style_btn_stop(obj);

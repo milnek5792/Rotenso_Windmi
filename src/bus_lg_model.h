@@ -90,7 +90,7 @@ typedef struct {
   int16_t ibh_delta_t_x10;  /**< 025BH */
   int16_t ibh_oat_x10;      /**< 025CH */
   int16_t pump_delta_t_x10; /**< 0239H */
-  uint16_t ui_type;         /**< 0209H: 0=bez, 1=kontakty, 2=WUI */
+  uint16_t ui_type;         /**< 0209H: 1=kontakty, 2=WUI (0 TČ odmítá) */
   uint16_t mask;            /**< bit i = reg i přečten (0x100=ui_type) */
 } WindmiHpConfigSnap;
 

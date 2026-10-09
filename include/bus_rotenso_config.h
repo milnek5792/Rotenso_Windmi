@@ -30,11 +30,15 @@
 
 /**
  * Pevný protokol — žádná autodetect:
- *   čtení  = FC 0x04 (Input Registers)
- *   zápis  = FC 0x06 (Write Single Register)
+ *   live RO  = FC 0x04 (Input Registers)
+ *   config RW = FC 0x03 read / 0x06 write (Holding — musí sedět se zápisem)
+ *   zápis    = FC 0x06 (Write Single Register)
  */
 #ifndef WINDMI_FC_READ
 #define WINDMI_FC_READ 0x04
+#endif
+#ifndef WINDMI_FC_HOLDING
+#define WINDMI_FC_HOLDING 0x03
 #endif
 #ifndef WINDMI_FC_WRITE
 #define WINDMI_FC_WRITE 0x06
@@ -130,12 +134,13 @@
 #ifndef WINDMI_CTRL_AMBIENT
 #define WINDMI_CTRL_AMBIENT 1
 #endif
-/** 0209H ui_type: 0=bez ovladače, 1=kontakty, 2=drátový WUI */
+/** 0209H ui_type (manuál): 1=kontakty/dry-contact, 2=drátový WUI.
+ *  Hodnota 0 TČ nepřijímá (vrací zpět 1) — „bez WUI“ = kontakty. */
 #ifndef WINDMI_REG_UI_TYPE
 #define WINDMI_REG_UI_TYPE 0x0209
 #endif
 #ifndef WINDMI_UI_NONE
-#define WINDMI_UI_NONE 0
+#define WINDMI_UI_NONE 0 /* nepoužívat — TČ odmítá */
 #endif
 #ifndef WINDMI_UI_CONTACTS
 #define WINDMI_UI_CONTACTS 1

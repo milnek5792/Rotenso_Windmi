@@ -6,6 +6,7 @@
 #include "storage_config_nvs.h"
 #include "ui_bus_bindings.h"
 #include "ui_eez_model.h"
+#include "src/net_mqtt_client.h"
 
 #include <Arduino.h>
 #include <esp_log.h>
@@ -410,6 +411,8 @@ void climateRegulatorSetPlanRoomOffset(float offsetC) {
   }
   s_planRoomOffset = v;
   climateRegulatorRequestImmediateTick();
+  // Tab/PWA ukazují effective SP — tele musí hned přepočítat útlum.
+  netMqttNotifySetpointChanged();
 }
 
 float climateRegulatorPlanRoomOffset(void) { return s_planRoomOffset; }

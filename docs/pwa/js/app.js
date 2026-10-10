@@ -1,6 +1,6 @@
 /** Windmi PWA — ovládání přes MQTT (WSS). */
 
-import { MqttBridge } from './mqtt-client.js?v=w2l';
+import { MqttBridge } from './mqtt-client.js?v=w2m';
 
 const STORAGE_KEY = 'windmi-pwa-settings';
 const MQTT_AUTO_KEY = 'windmi-pwa-mqtt-auto';
@@ -349,7 +349,8 @@ function applyMqttEvent(ev) {
 }
 
 function clampRoomSp(v) {
-  return Math.min(24, Math.max(18, Math.round(v * 2) / 2));
+  // Effective SP může jít až na 16 při plánovém útlumu.
+  return Math.min(24, Math.max(16, Math.round(v * 2) / 2));
 }
 
 function adjustSetpoint(delta) {
@@ -707,7 +708,7 @@ function registerSw() {
   purgeStaleWorkersAndCaches()
     .catch(() => {})
     .finally(() => {
-      navigator.serviceWorker.register('./sw.js?v=w2l').catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=w2m').catch(() => {});
     });
 }
 

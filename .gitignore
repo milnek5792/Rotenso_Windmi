@@ -16,6 +16,11 @@
 include/wifi_config.h
 include/mqtt_config.h
 
+# Dokumentace s hesly (nesmí na GitHub)
+docs/CREDENTIALS.local.md
+docs/**/*SECRETS*
+docs/**/*credentials*local*
+
 # Osobní soubory / fotky mimo projekt
 *.jpeg
 *.jpg

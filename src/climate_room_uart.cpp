@@ -985,32 +985,32 @@ void climateRoomPwrDiagText(char* outLink, size_t linkLen, char* outMeter,
   const int rssi =
       (s_lastPilotAtMs != 0) ? (int)s_lastPilotRssi : climateRoomEspNowLastRssi();
 
-  // --- Rádio (pilot ze S3) ---
+  // --- Radio (pilot ze S3) ---
   if (!climateRoomBridgeEspNowOk() && !havePilot && !climateRoomLastPwrOk()) {
     snprintf(outLink, linkLen,
-             "Rádio S3→bridge: bridge nemá ESP-NOW (Obnovit / OTA?)");
+             "Radio S3->bridge: bridge nema ESP-NOW (Obnovit / OTA?)");
   } else if (!havePilot && !climateRoomLastPwrOk()) {
     snprintf(outLink, linkLen,
-             "Rádio S3→bridge: ticho — žádný pilot (signál, kanál nebo MAC)");
+             "Radio S3->bridge: ticho - zadny pilot (signal, kanal nebo MAC)");
   } else if (radioOk) {
     snprintf(outLink, linkLen,
-             "Rádio S3→bridge: OK · pilot před %lu s · RSSI %d",
+             "Radio S3->bridge: OK / pilot pred %lu s / RSSI %d",
              (unsigned long)pilotAge, rssi);
   } else if (radioStale) {
     snprintf(outLink, linkLen,
-             "Rádio S3→bridge: výpadek · poslední pilot před %lu s · RSSI %d",
+             "Radio S3->bridge: vypadek / posledni pilot pred %lu s / RSSI %d",
              (unsigned long)pilotAge, rssi);
   } else if (climateRoomLastPwrOk()) {
-    // Starý S3 FW bez pilotu — aspoň PWR
+    // Stary S3 FW bez pilotu - aspon PWR
     const uint32_t pwrAge = climateRoomLastPwrAgeMs() / 1000u;
     snprintf(outLink, linkLen,
-             "Rádio S3→bridge: jen PWR (starý FW?) před %lu s · RSSI %d",
+             "Radio S3->bridge: jen PWR (stary FW?) pred %lu s / RSSI %d",
              (unsigned long)pwrAge, climateRoomLastPwrRssi());
   } else {
-    snprintf(outLink, linkLen, "Rádio S3→bridge: neznámý stav");
+    snprintf(outLink, linkLen, "Radio S3->bridge: neznamy stav");
   }
 
-  // --- Měřič PZEM (Modbus) ---
+  // --- Meric PZEM (Modbus) ---
   const bool pzemFromPilot = havePilot && s_lastPilotPzemLive;
   const bool pzemFromPwr = climateRoomLastPwrOk() && s_lastPwrPzemOk;
   const uint32_t pwrAgeSec = climateRoomLastPwrOk()
@@ -1019,32 +1019,32 @@ void climateRoomPwrDiagText(char* outLink, size_t linkLen, char* outMeter,
 
   if (!radioOk && !climateRoomLastPwrOk()) {
     snprintf(outMeter, meterLen,
-             "Měřič PZEM: nelze posoudit — nejdřív musí fungovat rádio");
+             "Meric PZEM: nelze posoudit - nejdriv musi fungovat radio");
   } else if (pzemFromPwr && pwrAgeSec < kPwrStaleSec) {
     if (s_lastPwrFailCnt > 0 && s_lastPwrFailCnt >= s_lastPwrOkCnt) {
       snprintf(outMeter, meterLen,
-               "Měřič PZEM: nestabilní UART (ok=%u fail=%u za minutu)",
+               "Meric PZEM: nestabilni UART (ok=%u fail=%u za minutu)",
                (unsigned)s_lastPwrOkCnt, (unsigned)s_lastPwrFailCnt);
     } else {
       snprintf(outMeter, meterLen,
-               "Měřič PZEM: OK · data před %lu s (ok=%u fail=%u)",
+               "Meric PZEM: OK / data pred %lu s (ok=%u fail=%u)",
                (unsigned long)pwrAgeSec, (unsigned)s_lastPwrOkCnt,
                (unsigned)s_lastPwrFailCnt);
     }
   } else if (climateRoomLastPwrOk() && !s_lastPwrPzemOk) {
     snprintf(outMeter, meterLen,
-             "Měřič PZEM: neodpovídá (UART/Modbus) — rádio ale funguje");
+             "Meric PZEM: neodpovida (UART/Modbus) - radio ale funguje");
   } else if (pzemFromPilot && !climateRoomLastPwrOk()) {
     snprintf(outMeter, meterLen,
-             "Měřič PZEM: živý podle pilotu · čekám na minutový PWR");
+             "Meric PZEM: zivy podle pilotu / cekam na minutovy PWR");
   } else if (havePilot && !s_lastPilotPzemLive && !pzemFromPwr) {
     snprintf(outMeter, meterLen,
-             "Měřič PZEM: neodpovídá — S3 vysílá pilot, ale Modbus selhává");
+             "Meric PZEM: neodpovida - S3 vysila pilot, ale Modbus selhava");
   } else if (pwrAgeSec != UINT32_MAX && pwrAgeSec >= kPwrStaleSec) {
     snprintf(outMeter, meterLen,
-             "Měřič PZEM: stará data (PWR před %lu s)",
+             "Meric PZEM: stara data (PWR pred %lu s)",
              (unsigned long)pwrAgeSec);
   } else {
-    snprintf(outMeter, meterLen, "Měřič PZEM: čekám na první data");
+    snprintf(outMeter, meterLen, "Meric PZEM: cekam na prvni data");
   }
 }

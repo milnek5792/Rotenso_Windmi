@@ -91,15 +91,15 @@ bool pointInObj(lv_obj_t* obj, int tx, int ty) {
 
 void formatAge(char* buf, size_t len, uint32_t ageMs) {
   if (ageMs == UINT32_MAX) {
-    snprintf(buf, len, "—");
+    snprintf(buf, len, "---");
     return;
   }
   if (ageMs < 2000u) {
-    snprintf(buf, len, "teď");
+    snprintf(buf, len, "ted");
   } else if (ageMs < 60000u) {
-    snprintf(buf, len, "před %u s", (unsigned)(ageMs / 1000u));
+    snprintf(buf, len, "pred %u s", (unsigned)(ageMs / 1000u));
   } else {
-    snprintf(buf, len, "před %u min", (unsigned)(ageMs / 60000u));
+    snprintf(buf, len, "pred %u min", (unsigned)(ageMs / 60000u));
   }
 }
 
@@ -140,7 +140,7 @@ void refreshLabels(void) {
   }
   setLabelIfChanged(bridgeDiagObj.lbl_mac, line);
 
-  snprintf(line, sizeof(line), "Kanál ESP-NOW: %u",
+  snprintf(line, sizeof(line), "Kanal ESP-NOW: %u",
            (unsigned)climateRoomBridgeChannel());
   setLabelIfChanged(bridgeDiagObj.lbl_ch, line);
 
@@ -161,12 +161,12 @@ void refreshLabels(void) {
     uint32_t col = kColMuted;
     if (strstr(text, ": OK")) {
       col = kColGreen;
-    } else if (strstr(text, "čekám") || strstr(text, "nestabilní") ||
-               strstr(text, "nelze posoudit") || strstr(text, "starý FW")) {
+    } else if (strstr(text, "cekam") || strstr(text, "nestabilni") ||
+               strstr(text, "nelze posoudit") || strstr(text, "stary FW")) {
       col = kColOrange;
-    } else if (strstr(text, "výpadek") || strstr(text, "ticho") ||
-               strstr(text, "neodpovídá") || strstr(text, "nemá ESP-NOW") ||
-               strstr(text, "stará data")) {
+    } else if (strstr(text, "vypadek") || strstr(text, "ticho") ||
+               strstr(text, "neodpovida") || strstr(text, "nema ESP-NOW") ||
+               strstr(text, "stara data")) {
       col = 0xFF453Au;
     }
     lv_obj_set_style_text_color(lbl, lv_color_hex(col),
@@ -177,11 +177,11 @@ void refreshLabels(void) {
 
   if (climateRoomLastPwrOk()) {
     formatAge(age, sizeof(age), climateRoomLastPwrAgeMs());
-    snprintf(line, sizeof(line), "PWR: %u W · %.3f kWh · RSSI %d  (%s)",
+    snprintf(line, sizeof(line), "PWR: %u W / %.3f kWh / RSSI %d  (%s)",
              (unsigned)climateRoomLastPwrW(),
              (double)climateRoomLastPwrKwh(), climateRoomLastPwrRssi(), age);
   } else {
-    snprintf(line, sizeof(line), "PWR: --- (čekám na vzorek ~1 min)");
+    snprintf(line, sizeof(line), "PWR: --- (cekam na vzorek ~1 min)");
   }
   setLabelIfChanged(bridgeDiagObj.lbl_pwr, line);
 
@@ -190,7 +190,7 @@ void refreshLabels(void) {
     snprintf(line, sizeof(line), "OTA: %s  %s", climateRoomBridgeOtaHost(),
              climateRoomBridgeOtaIp());
   } else if (ota == CLIMATE_BRIDGE_OTA_CONNECTING) {
-    snprintf(line, sizeof(line), "OTA: připojuji Wi-Fi...");
+    snprintf(line, sizeof(line), "OTA: pripojuji Wi-Fi...");
   } else if (ota == CLIMATE_BRIDGE_OTA_FAIL) {
     snprintf(line, sizeof(line), "OTA: selhalo");
   } else {
@@ -249,16 +249,16 @@ void uiBridgeDiagCreate(void) {
   bridgeDiagObj.lbl_mac = makeLbl(y, kLine, "MAC: ---", kColText, false);
   y += kLine;
   bridgeDiagObj.lbl_ch =
-      makeLbl(y, kLine, "Kanál ESP-NOW: ---", kColMuted, false);
+      makeLbl(y, kLine, "Kanal ESP-NOW: ---", kColMuted, false);
   y += kLine;
   bridgeDiagObj.lbl_espnow =
       makeLbl(y, kLine, "Bridge ESP-NOW init: ---", kColMuted, false);
   y += kLine + 6;
   bridgeDiagObj.lbl_link =
-      makeLbl(y, kLineTall, "Rádio S3→bridge: ---", kColText, true);
+      makeLbl(y, kLineTall, "Radio S3->bridge: ---", kColText, true);
   y += kLineTall + 4;
   bridgeDiagObj.lbl_meter =
-      makeLbl(y, kLineTall, "Měřič PZEM: ---", kColText, true);
+      makeLbl(y, kLineTall, "Meric PZEM: ---", kColText, true);
   y += kLineTall + 4;
   bridgeDiagObj.lbl_pwr = makeLbl(y, kLineTall, "PWR: ---", kColMuted, true);
   y += kLineTall + 4;
@@ -274,7 +274,7 @@ void uiBridgeDiagCreate(void) {
                                      onOta, kColGreen);
   bridgeDiagObj.btn_close =
       makeButton(bridgeDiagObj.modal_panel, kPad + 2 * (btnW + 10), btnY, btnW,
-                 kBtnH, "Zavřít", onClose, kColPurple);
+                 kBtnH, "Zavrit", onClose, kColPurple);
 }
 
 void uiBridgeDiagShow(void) {

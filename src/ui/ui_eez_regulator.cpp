@@ -494,12 +494,12 @@ void uiRegulatorTick(void) {
   const float outUi = uiEez.teplota_venkovni;
   const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
 
-  const char* modeTxt = "Ruční SP vody (regulátor pauza)";
+  const char* modeTxt = "Rucni SP vody (regulator pauza)";
   if (snap.classic_equitherm) {
-    modeTxt = "Ekviterm — SP vody = křivka + korekce";
+    modeTxt = "Ekviterm - SP vody = krivka + korekce";
   } else if (snap.active) {
     modeTxt = snap.eco_mode ? "Pokoj PI - Eco (kompresor vyp.)"
-                            : "Pokoj PI - běžná regulace";
+                            : "Pokoj PI - bezna regulace";
   }
 
   char line[280];
@@ -515,8 +515,8 @@ void uiRegulatorTick(void) {
   } else {
     snprintf(line, sizeof(line),
              "%s\n"
-             "základ %.1f + PI %.1f = %.1f  LIN %u °C\n"
-             "P %.1f  I %.1f °C   e %.2f °C\n"
+             "zaklad %.1f + PI %.1f = %.1f  MB %u C\n"
+             "P %.1f  I %.1f C   e %.2f C\n"
              "pokoj %.1f / SP %.1f   venku %.1f\n"
              "senzor %s%s",
              modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,

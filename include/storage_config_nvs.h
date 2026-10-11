@@ -36,6 +36,11 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg);
 bool storageLoadRegulatorConfig(RegulatorConfig* cfg);
 void storageSaveRegulatorConfig(const RegulatorConfig* cfg);
 bool storageRegulatorConfigKeyExists(void);
+/** Historie grafu regulátoru (přežije OTA/reboot). */
+bool storageLoadRegulatorHistory(RegulatorHistoryPoint* pts, int cap, int* count,
+                                 int* head);
+void storageSaveRegulatorHistory(const RegulatorHistoryPoint* pts, int cap,
+                                 int count, int head);
 /** Room SP v desetinách °C (225 = 22.5). Spolehlivější než float v reg_cfg blobu. */
 bool storageLoadRoomSpTenths(int16_t* outTenths);
 void storageSaveRoomSpTenths(int16_t tenths);

@@ -487,12 +487,19 @@ void uiRegulatorTick(void) {
         LV_PART_MAIN | LV_STATE_DEFAULT);
   }
 
-  const float roomUi = uiEez.teplota_vnitrni;
-  const bool roomUiOk = roomUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
+  const float roomUi = snap.room_ok ? snap.room_c : uiEez.teplota_vnitrni;
+  const bool roomUiOk = snap.room_ok || (roomUi > (UI_TEPLOTA_NEPLATNA + 100.0f));
   const float roomSp = snap.room_sp_c;
-  const float errLive = roomUiOk ? (roomSp - roomUi) : snap.error_c;
   const float outUi = uiEez.teplota_venkovni;
   const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
+
+  // P spočítat tady z Kp·e — stejná čísla jako na řádku pokoj/SP.
+  const float errUi = roomUiOk ? (roomSp - roomUi) : snap.error_c;
+  float pUi = 0.0f;
+  if (!snap.classic_equitherm && !snap.eco_mode && roomUiOk) {
+    const float scale = (errUi < 0.0f) ? REG_COOL_GAIN_SCALE : 1.0f;
+    pUi = cfg->kp * scale * errUi;
+  }
 
   const char* modeTxt = "Rucni SP vody (regulator pauza)";
   if (snap.classic_equitherm) {
@@ -516,15 +523,15 @@ void uiRegulatorTick(void) {
     snprintf(line, sizeof(line),
              "%s\n"
              "zaklad %.1f + PI %.1f = %.1f  MB %u C\n"
-             "P %.1f  I %.1f C   e %.2f C\n"
+             "e %.2f -> P %.2f (Kp*e)  I %.2f\n"
              "pokoj %.1f / SP %.1f   venku %.1f\n"
              "senzor %s%s",
              modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,
              (double)snap.t_water_sp_c, (unsigned)snap.t_water_c,
-             (double)snap.p_term_c, (double)snap.i_term_c, (double)errLive,
+             (double)errUi, (double)pUi, (double)snap.i_term_c,
              roomUiOk ? (double)roomUi : -999.0, (double)roomSp,
              outUiOk ? (double)outUi : -999.0,
-             roomUiOk ? "OK" : "OFF", s_dirty ? " *" : "");
+             snap.room_ok ? "OK" : "OFF", s_dirty ? " *" : "");
   }
   setLabelIfChanged(regulatorObj.lbl_live, line);
 

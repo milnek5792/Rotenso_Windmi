@@ -116,6 +116,14 @@ Důležité registry:
 - Tab i PWA ukazují **effective** SP.
 - PWA posílá jen `cmd/setpoint` = `+` / `-` (ne absolutní hodnotu), aby se útlum nezapsal jako nový základ.
 
+### Stabilizace SP vody (2026-10-11)
+
+- **EMA venku** do ekvitermního základu: τ ≈ 10 min při oteplení, ≈ 3 min při ochlazení (UI ukazuje raw).
+- **Asym. PI**: při `err < 0` (přetopení) Kp/Ki/Kd × 0,25.
+- **Eco** až při pokoji ≥ SP + **1,0 °C** (návrat ≤ SP).
+- Stav: živé `e -> P (Kp*e) I` (ASCII — font cs bez šipek).
+- Graf regulátoru (~2 h / 60 bodů): NVS `reg_hist`, zápis **max 1× / 30 min** (častý flash bliká displejem).
+
 ---
 
 ## 6. MQTT API (`windmi/…`)
@@ -220,7 +228,7 @@ Konkrétní hostnames, IP, user/password → **`docs/CREDENTIALS.local.md`**.
 | Typ | Kde |
 |-----|-----|
 | ZIP | `C:\Users\mnekv\Documents\Arduino\backups\Rotenso_Windmi_*.zip` |
-| Git tag | např. `backup-2026-10-10-ui-text`, `backup-2026-10-09-pwa-mqtt` |
+| Git tag | např. `backup-2026-10-11-reg-filter`, `backup-2026-10-10-ui-text` |
 | Remote | `origin/main` na GitHub |
 
 Po větší změně: ZIP + commit + annotated tag + `docs/CREDENTIALS.local.md` na bezpečné místo.

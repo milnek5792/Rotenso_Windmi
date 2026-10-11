@@ -32,7 +32,10 @@ constexpr const char* kKeyBlPct = "bl_pct";
 constexpr const char* kKeyBlSleep = "bl_sleep";
 constexpr const char* kKeyPlan = "plan_cfg";
 constexpr const char* kKeyReg = "reg_cfg";
+constexpr const char* kKeyRegHist = "reg_hist";
 constexpr const char* kKeyRoomSpX10 = "room_sp_x10";
+constexpr uint32_t kRegHistMagic = 0x52484731u;  // RHG1
+constexpr uint16_t kRegHistVersion = 1;
 constexpr const char* kKeyUiRezim = "ui_rezim";
 constexpr const char* kKeyTcOn = "tc_on";
 constexpr const char* kKeyTcSp = "tc_sp";
@@ -661,6 +664,74 @@ void storageSaveRegulatorConfig(const RegulatorConfig* cfg) {
                 (double)cfg->room_sp_c, (unsigned)checkLen, ok ? "ok" : "FAIL");
   if (!ok) {
     Serial.printf("[NVS] reg_cfg save FAIL bytes=%u\n", (unsigned)checkLen);
+  }
+}
+
+struct RegHistBlobHdr {
+  uint32_t magic;
+  uint16_t version;
+  uint16_t count;
+  uint16_t head;
+  uint16_t reserved;
+};
+
+bool storageLoadRegulatorHistory(RegulatorHistoryPoint* pts, int cap, int* count,
+                                 int* head) {
+  if (!pts || cap <= 0 || !count || !head) {
+    return false;
+  }
+  *count = 0;
+  *head = 0;
+  NvsLock lock;
+  ensureOpen();
+  if (!s_prefs.isKey(kKeyRegHist)) {
+    return false;
+  }
+  const size_t got = s_prefs.getBytesLength(kKeyRegHist);
+  const size_t want =
+      sizeof(RegHistBlobHdr) + (size_t)cap * sizeof(RegulatorHistoryPoint);
+  if (got != want || cap > REG_HISTORY_LEN) {
+    return false;
+  }
+  uint8_t buf[sizeof(RegHistBlobHdr) +
+              REG_HISTORY_LEN * sizeof(RegulatorHistoryPoint)];
+  if (s_prefs.getBytes(kKeyRegHist, buf, want) != want) {
+    return false;
+  }
+  RegHistBlobHdr hdr{};
+  memcpy(&hdr, buf, sizeof(hdr));
+  if (hdr.magic != kRegHistMagic || hdr.version != kRegHistVersion ||
+      hdr.count > (uint16_t)cap || hdr.head >= (uint16_t)cap) {
+    return false;
+  }
+  memcpy(pts, buf + sizeof(hdr), (size_t)cap * sizeof(RegulatorHistoryPoint));
+  *count = (int)hdr.count;
+  *head = (int)hdr.head;
+  return hdr.count > 0;
+}
+
+void storageSaveRegulatorHistory(const RegulatorHistoryPoint* pts, int cap,
+                                 int count, int head) {
+  if (!pts || cap <= 0 || cap > REG_HISTORY_LEN || count < 0 || count > cap ||
+      head < 0 || head >= cap) {
+    return;
+  }
+  const size_t want =
+      sizeof(RegHistBlobHdr) + (size_t)cap * sizeof(RegulatorHistoryPoint);
+  uint8_t buf[sizeof(RegHistBlobHdr) +
+              REG_HISTORY_LEN * sizeof(RegulatorHistoryPoint)];
+  RegHistBlobHdr hdr{};
+  hdr.magic = kRegHistMagic;
+  hdr.version = kRegHistVersion;
+  hdr.count = (uint16_t)count;
+  hdr.head = (uint16_t)head;
+  hdr.reserved = 0;
+  memcpy(buf, &hdr, sizeof(hdr));
+  memcpy(buf + sizeof(hdr), pts, (size_t)cap * sizeof(RegulatorHistoryPoint));
+  NvsLock lock;
+  ensureOpen();
+  if (s_prefs.putBytes(kKeyRegHist, buf, want) != want) {
+    Serial.println("[NVS] reg_hist putBytes FAIL");
   }
 }
 

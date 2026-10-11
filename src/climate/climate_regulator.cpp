@@ -1,4 +1,4 @@
-// climate_regulator.cpp — ekviterm (lineární −15/+15) + PI korekce + asym. Eco
+// climate_regulator.cpp — ekviterm + PI (asym. chladnutí) + EMA venku + Eco
 #include "climate_regulator.h"
 
 #include "climate_room.h"
@@ -19,6 +19,8 @@ static const char* TAG = "REG";
 
 constexpr uint32_t kPidPeriodMs = 120000;
 constexpr uint32_t kHistoryPeriodMs = 120000;
+/** NVS zápis grafu — řídce (flash bliká / shazuje SDIO). RAM se plní dál po 120 s. */
+constexpr uint32_t kHistoryNvsPeriodMs = 30u * 60u * 1000u;
 constexpr uint32_t kBusRetryMs = 5000;
 
 constexpr float kOutMin = (float)REG_T_WATER_MIN_C;
@@ -46,11 +48,17 @@ uint32_t s_roomSpSaveRequestMs = 0;
 /** Delší idle — NVS flash při MQTT/SDIO shazuje Tab5. */
 constexpr uint32_t kNvsIdleBeforeFlushMs = 8000;
 bool s_haveEqBase = false;
+/** Filtrovaná venkovní teplota pro ekvitermní základ. */
+float s_outFiltC = NAN;
+bool s_haveOutFilt = false;
+uint32_t s_lastOutFiltMs = 0;
 uint8_t s_lastWrittenC = 0;
 bool s_haveWritten = false;
 uint32_t s_lastPidMs = 0;
 uint32_t s_lastWriteMs = 0;
 uint32_t s_lastHistoryMs = 0;
+uint32_t s_lastHistoryNvsMs = 0;
+bool s_histNvsDirty = false;
 bool s_wasAuto = false;
 
 RegulatorHistoryPoint s_hist[REG_HISTORY_LEN];
@@ -68,6 +76,25 @@ float clampf(float v, float lo, float hi) {
   return v;
 }
 
+void flushHistoryNvsIfDue(uint32_t now, bool force) {
+  if (!s_histNvsDirty || s_histCount <= 0) {
+    return;
+  }
+  if (!force) {
+    if (s_lastHistoryNvsMs == 0) {
+      s_lastHistoryNvsMs = now;  // odlož první zápis o celou periodu
+      return;
+    }
+    if ((now - s_lastHistoryNvsMs) < kHistoryNvsPeriodMs) {
+      return;
+    }
+  }
+  storageSaveRegulatorHistory(s_hist, REG_HISTORY_LEN, s_histCount, s_histHead);
+  s_lastHistoryNvsMs = now;
+  s_histNvsDirty = false;
+  ESP_LOGI(TAG, "NVS reg_hist saved points=%d", s_histCount);
+}
+
 void pushHistory(float room, float sp, float tWater, float outdoor) {
   s_hist[s_histHead].room_c = room;
   s_hist[s_histHead].room_sp_c = sp;
@@ -78,6 +105,8 @@ void pushHistory(float room, float sp, float tWater, float outdoor) {
     s_histCount++;
   }
   s_histGen++;
+  s_histNvsDirty = true;
+  flushHistoryNvsIfDue(millis(), false);
 }
 
 uint8_t waterToBusC(float tC, float err) {
@@ -126,6 +155,31 @@ float computeEqBase(float outdoorC) {
   return equithermWaterFromCfg(outdoorC, &s_cfg);
 }
 
+/** Asym. EMA: při oteplení pomalu (brání skoku SP dolů), při ochlazení rychleji. */
+void updateOutdoorFilter(bool outOk, float rawC, uint32_t now) {
+  if (!outOk || isnan(rawC)) {
+    return;
+  }
+  if (!s_haveOutFilt || isnan(s_outFiltC)) {
+    s_outFiltC = rawC;
+    s_haveOutFilt = true;
+    s_lastOutFiltMs = now;
+    return;
+  }
+  float dtS = (float)(now - s_lastOutFiltMs) * 0.001f;
+  if (dtS <= 0.0f) {
+    return;
+  }
+  if (dtS > 600.0f) {
+    dtS = 600.0f;
+  }
+  const float tau =
+      (rawC > s_outFiltC) ? REG_OUT_FILT_TAU_WARM_S : REG_OUT_FILT_TAU_COLD_S;
+  const float alpha = dtS / (tau + dtS);
+  s_outFiltC += alpha * (rawC - s_outFiltC);
+  s_lastOutFiltMs = now;
+}
+
 float resolveBase(bool outOk, float outC, bool forceEquitherm) {
   if (!forceEquitherm && s_cfg.use_equitherm == 0) {
     return kFixedBaseC;
@@ -141,6 +195,23 @@ float resolveBase(bool outOk, float outC, bool forceEquitherm) {
   return kFixedBaseC;
 }
 
+/** Venkovní vstup do křivky: filtrovaný, jinak raw / hold. */
+bool outdoorForCurve(bool rawOk, float rawC, float* outC) {
+  if (!outC) {
+    return false;
+  }
+  if (s_haveOutFilt && !isnan(s_outFiltC)) {
+    *outC = s_outFiltC;
+    return true;
+  }
+  if (rawOk && !isnan(rawC)) {
+    *outC = rawC;
+    return true;
+  }
+  *outC = NAN;
+  return false;
+}
+
 bool isClassicEquithermMode(void) {
   return uiEez.rezim == UI_REZIM_EKVITERM;
 }
@@ -150,8 +221,12 @@ bool isRegulatorActiveMode(void) {
 }
 
 void adoptOutput(const char* why) {
-  const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
-  const float outC = outOk ? mVenkovniC : NAN;
+  const uint32_t now = millis();
+  const bool rawOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
+  const float rawC = rawOk ? mVenkovniC : NAN;
+  updateOutdoorFilter(rawOk, rawC, now);
+  float outC = NAN;
+  const bool outOk = outdoorForCurve(rawOk, rawC, &outC);
   const bool classic = isClassicEquithermMode();
   const float base = resolveBase(outOk, outC, classic);
   const float a0 = currentOutputWaterC();
@@ -328,6 +403,13 @@ void climateRegulatorInit(void) {
   s_histCount = 0;
   s_histHead = 0;
   s_histGen = 0;
+  if (storageLoadRegulatorHistory(s_hist, REG_HISTORY_LEN, &s_histCount,
+                                  &s_histHead)) {
+    s_histGen = 1;
+    ESP_LOGI(TAG, "NVS reg_hist OK points=%d head=%d", s_histCount, s_histHead);
+  } else {
+    memset(s_hist, 0, sizeof(s_hist));
+  }
   s_wasAuto = false;
   s_eco = false;
   s_haveEqBase = false;
@@ -431,24 +513,45 @@ void climateRegulatorGetSnapshot(RegulatorSnapshot* out) {
   if (!out) {
     return;
   }
+  const bool classic = isClassicEquithermMode();
+  const bool active = isRegulatorActiveMode();
+  const bool roomOk = climateRoomIsOk();
+  const float roomSp = climateRegulatorRoomSpEffective();
+  const float roomC = roomOk ? climateRoomTempC() : UI_TEPLOTA_NEPLATNA;
+
+  // Živá chyba pokoje (ne jen hodnota z posledního PID ticku).
+  const bool roomValid =
+      roomOk && !isnan(roomC) && (roomC > (UI_TEPLOTA_NEPLATNA + 100.0f));
+  float errLive = s_lastError;
+  if (roomValid) {
+    errLive = roomSp - roomC;
+  }
+
+  // P = Kp·e vždy z živé chyby (i při pauze regulátoru). V Eco/ekvitermě = 0.
+  float pLive = 0.0f;
+  if (!classic && !s_eco && roomValid) {
+    const float scale = (errLive < 0.0f) ? REG_COOL_GAIN_SCALE : 1.0f;
+    pLive = s_cfg.kp * scale * errLive;
+  }
+
   out->t_water_sp_c = s_tWater;
   out->t_water_raw_c = s_tWaterRaw;
   out->eq_base_c = s_eqBase;
   out->pid_corr_c = s_pidCorr;
-  out->p_term_c = s_lastP;
+  out->p_term_c = pLive;
   out->i_term_c = s_iTerm;
-  out->error_c = s_lastError;
-  out->room_sp_c = climateRegulatorRoomSpEffective();
-  out->room_c = climateRoomIsOk() ? climateRoomTempC() : UI_TEPLOTA_NEPLATNA;
+  out->error_c = errLive;
+  out->room_sp_c = roomSp;
+  out->room_c = roomC;
   const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
   out->outdoor_c = outOk ? mVenkovniC : UI_TEPLOTA_NEPLATNA;
-  out->t_water_c = waterToBusC(s_tWater, s_eco ? -1.0f : s_lastError);
-  out->active = isRegulatorActiveMode();
+  out->t_water_c = waterToBusC(s_tWater, s_eco ? -1.0f : errLive);
+  out->active = active;
   out->eco_mode = s_eco;
-  out->room_ok = climateRoomIsOk();
+  out->room_ok = roomOk;
   out->outdoor_ok = outOk;
-  out->use_equitherm = (s_cfg.use_equitherm != 0) || isClassicEquithermMode();
-  out->classic_equitherm = isClassicEquithermMode();
+  out->use_equitherm = (s_cfg.use_equitherm != 0) || classic;
+  out->classic_equitherm = classic;
   out->pid_period_ms = kPidPeriodMs;
   if (s_lastPidMs == 0) {
     out->ms_since_pid = UINT32_MAX;
@@ -478,6 +581,12 @@ void climateRegulatorHistoryGet(int index, RegulatorHistoryPoint* out) {
 }
 
 void climateRegulatorTick(void) {
+  const uint32_t now = millis();
+  const bool rawOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
+  const float rawC = rawOk ? mVenkovniC : NAN;
+  // Filtr běží vždy (i mimo Auto / mezi PID ticky).
+  updateOutdoorFilter(rawOk, rawC, now);
+
   const bool active = isRegulatorActiveMode();
   const bool classic = isClassicEquithermMode();
   if (!active) {
@@ -495,7 +604,6 @@ void climateRegulatorTick(void) {
   }
   s_wasAuto = true;
 
-  const uint32_t now = millis();
   const bool tcBezi = tcBeziProRegulaci();
   if (tcBezi) {
     retryUnconfirmedSp(now);
@@ -511,8 +619,8 @@ void climateRegulatorTick(void) {
   const float roomSp = climateRegulatorRoomSpEffective();
   const bool roomOk = climateRoomIsOk();
   const float roomC = roomOk ? climateRoomTempC() : NAN;
-  const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
-  const float outC = outOk ? mVenkovniC : NAN;
+  float outC = NAN;
+  const bool outOk = outdoorForCurve(rawOk, rawC, &outC);
 
   float err = 0.0f;
   const float base = resolveBase(outOk, outC, classic);
@@ -530,10 +638,12 @@ void climateRegulatorTick(void) {
     s_tWaterRaw = tRaw;
     s_tWater = clampf(tRaw, kOutMin, kOutMax);
     ESP_LOGI(TAG,
-             "Ekviterm — krivka=%.1f offset=%+.0f plan=%+.0f req=%.1f out=%.1f tc=%d",
+             "Ekviterm — krivka=%.1f offset=%+.0f plan=%+.0f req=%.1f "
+             "outF=%.1f raw=%.1f tc=%d",
              (double)(base - s_cfg.offset_c), (double)s_cfg.offset_c,
              (double)s_planRoomOffset, (double)s_tWater,
-             outOk ? (double)outC : -999.0, (int)tcBezi);
+             outOk ? (double)outC : -999.0,
+             rawOk ? (double)rawC : -999.0, (int)tcBezi);
   } else if (roomOk && !isnan(roomC)) {
     err = roomSp - roomC;
     s_lastError = err;
@@ -556,18 +666,25 @@ void climateRegulatorTick(void) {
       s_pidCorr = s_iTerm;
       s_tWater = kOutMin;
       s_tWaterRaw = kOutMin;
-      ESP_LOGI(TAG, "Eco mod — SP vody 20 C (kompresor off) I=%.2f e=%.2f",
-               (double)s_iTerm, (double)err);
+      ESP_LOGI(TAG, "Eco mod — SP vody %d C (kompresor off) I=%.2f e=%.2f",
+               (int)REG_T_WATER_MIN_C, (double)s_iTerm, (double)err);
     } else {
+      // Asym. chladnutí: při přetopení (err < 0) slabší gainy → pomalejší SP dolů.
+      const bool cooling = (err < 0.0f);
+      const float gainScale = cooling ? REG_COOL_GAIN_SCALE : 1.0f;
+      const float kp = s_cfg.kp * gainScale;
+      const float ki = s_cfg.ki * gainScale;
+      const float kd = s_cfg.kd * gainScale;
+
       float d = 0.0f;
       if (s_havePrev) {
-        d = s_cfg.kd * (err - s_prevError);
+        d = kd * (err - s_prevError);
       }
       s_prevError = err;
       s_havePrev = true;
 
-      s_iTerm += s_cfg.ki * err;
-      const float p = s_cfg.kp * err;
+      s_iTerm += ki * err;
+      const float p = kp * err;
       s_lastP = p;
       float corr = p + s_iTerm + d;
       corr = clampf(corr, REG_CORR_MIN_C, REG_CORR_MAX_C);
@@ -582,10 +699,11 @@ void climateRegulatorTick(void) {
 
       ESP_LOGI(TAG,
                "Bezna regulace — zaklad=%.1f korekce=%.2f (P=%.1f I=%.1f) "
-               "req=%.1f e=%.2f room=%.1f/%.1f out=%.1f tc=%d",
+               "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f cool=%d tc=%d",
                (double)base, (double)corr, (double)p, (double)s_iTerm,
                (double)t, (double)err, (double)roomC, (double)roomSp,
-               outOk ? (double)outC : -999.0, (int)tcBezi);
+               outOk ? (double)outC : -999.0,
+               rawOk ? (double)rawC : -999.0, (int)cooling, (int)tcBezi);
     }
   } else {
     s_lastError = 0.0f;
@@ -604,11 +722,11 @@ void climateRegulatorTick(void) {
     maybeWriteSetpoint(tBus, now);
   }
 
-  // Historie grafu i při plánu VYP / vypnutém TČ (jinak se graf nevykreslí)
+  // Historie grafu: raw venku (UI), SP z filtrovaného základu
   if (s_lastHistoryMs == 0 || (now - s_lastHistoryMs) >= kHistoryPeriodMs) {
     s_lastHistoryMs = now;
     pushHistory(roomOk ? roomC : UI_TEPLOTA_NEPLATNA, roomSp, s_tWater,
-                outOk ? outC : UI_TEPLOTA_NEPLATNA);
+                rawOk ? rawC : UI_TEPLOTA_NEPLATNA);
   }
 }
 

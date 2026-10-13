@@ -1,4 +1,4 @@
-// climate_regulator.h — adaptivní ekviterm + PI korekce + asym. Eco
+// climate_regulator.h — ekviterm + standardní PI + Eco pojistka
 #ifndef CLIMATE_REGULATOR_H
 #define CLIMATE_REGULATOR_H
 
@@ -19,11 +19,8 @@ extern "C" {
 #define REG_CORR_MIN_C (-5.0f)
 #define REG_CORR_MAX_C (3.0f)
 
-/** Asymetrické Eco: vstup při SP+hyst, návrat při ≤ SP. */
+/** Eco pojistka: vstup při SP+hyst → SP vody na minimum; návrat při ≤ SP. */
 #define REG_ECO_HYST_C (1.0f)
-
-/** PI při chladnutí (err < 0): násobek Kp/Ki/Kd — pomalejší pokles SP vody. */
-#define REG_COOL_GAIN_SCALE (0.25f)
 
 /** EMA venkovní teploty: τ při oteplení / ochlazení [s]. */
 #define REG_OUT_FILT_TAU_WARM_S (600.0f)
@@ -65,7 +62,7 @@ struct RegulatorSnapshot {
   float t_water_raw_c;  // před clampem [°C]
   float eq_base_c;      // ekviterm / fallback základ
   float pid_corr_c;     // PI korekce (−5…+3)
-  float p_term_c;       // živé Kp·e (cool scale při err<0); 0 v Eco/ekvitermě
+  float p_term_c;       // živé Kp·e; 0 v Eco/ekvitermě
   float i_term_c;       // integrál (zmražen v Eco)
   float error_c;        // živé SP_pokoj − T_pokoj
   float room_sp_c;

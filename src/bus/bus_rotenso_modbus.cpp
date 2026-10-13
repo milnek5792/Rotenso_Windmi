@@ -294,14 +294,14 @@ uint16_t be16(const uint8_t* p) {
 }
 
 bool decodeTemp(const uint8_t* p, float* outC) {
+  // Windmi 0001…0004: vždy °C×10 (int16). Neplatné: −400 / −40.
+  // Starý fallback (raw 5…90 → celé °C) rozbíjel venkovní < 5 °C:
+  // raw=30 (=3.0 °C) → zobrazilo 30 °C.
   const int16_t raw = (int16_t)be16(p);
   if (raw == (int16_t)WINDMI_TEMP_INVALID_RAW || raw == -40) {
     return false;
   }
-  float c = (float)raw * WINDMI_TEMP_SCALE;
-  if (raw >= 5 && raw <= 90 && c < 5.0f) {
-    c = (float)raw;
-  }
+  const float c = (float)raw * WINDMI_TEMP_SCALE;
   if (c <= (WINDMI_TEMP_INVALID_C + 0.05f) || c > 120.0f) {
     return false;
   }

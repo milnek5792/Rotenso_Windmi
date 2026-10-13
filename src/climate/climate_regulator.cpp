@@ -1,4 +1,4 @@
-// climate_regulator.cpp — ekviterm + PI (asym. chladnutí) + EMA venku + Eco
+// climate_regulator.cpp — ekviterm + standardní PI + EMA venku + Eco pojistka
 #include "climate_regulator.h"
 
 #include "climate_room.h"
@@ -527,11 +527,10 @@ void climateRegulatorGetSnapshot(RegulatorSnapshot* out) {
     errLive = roomSp - roomC;
   }
 
-  // P = Kp·e vždy z živé chyby (i při pauze regulátoru). V Eco/ekvitermě = 0.
+  // P = Kp·e z živé chyby. V Eco/ekvitermě = 0.
   float pLive = 0.0f;
   if (!classic && !s_eco && roomValid) {
-    const float scale = (errLive < 0.0f) ? REG_COOL_GAIN_SCALE : 1.0f;
-    pLive = s_cfg.kp * scale * errLive;
+    pLive = s_cfg.kp * errLive;
   }
 
   out->t_water_sp_c = s_tWater;
@@ -669,22 +668,17 @@ void climateRegulatorTick(void) {
       ESP_LOGI(TAG, "Eco mod — SP vody %d C (kompresor off) I=%.2f e=%.2f",
                (int)REG_T_WATER_MIN_C, (double)s_iTerm, (double)err);
     } else {
-      // Asym. chladnutí: při přetopení (err < 0) slabší gainy → pomalejší SP dolů.
-      const bool cooling = (err < 0.0f);
-      const float gainScale = cooling ? REG_COOL_GAIN_SCALE : 1.0f;
-      const float kp = s_cfg.kp * gainScale;
-      const float ki = s_cfg.ki * gainScale;
-      const float kd = s_cfg.kd * gainScale;
-
+      // Standardní PI: e = SP − T, I += Ki·e, corr = Kp·e + I (+ Kd),
+      // SP_vody = base + corr (clamp −5…+3, anti-windup na I).
       float d = 0.0f;
       if (s_havePrev) {
-        d = kd * (err - s_prevError);
+        d = s_cfg.kd * (err - s_prevError);
       }
       s_prevError = err;
       s_havePrev = true;
 
-      s_iTerm += ki * err;
-      const float p = kp * err;
+      s_iTerm += s_cfg.ki * err;
+      const float p = s_cfg.kp * err;
       s_lastP = p;
       float corr = p + s_iTerm + d;
       corr = clampf(corr, REG_CORR_MIN_C, REG_CORR_MAX_C);
@@ -699,11 +693,11 @@ void climateRegulatorTick(void) {
 
       ESP_LOGI(TAG,
                "Bezna regulace — zaklad=%.1f korekce=%.2f (P=%.1f I=%.1f) "
-               "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f cool=%d tc=%d",
+               "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f tc=%d",
                (double)base, (double)corr, (double)p, (double)s_iTerm,
                (double)t, (double)err, (double)roomC, (double)roomSp,
                outOk ? (double)outC : -999.0,
-               rawOk ? (double)rawC : -999.0, (int)cooling, (int)tcBezi);
+               rawOk ? (double)rawC : -999.0, (int)tcBezi);
     }
   } else {
     s_lastError = 0.0f;

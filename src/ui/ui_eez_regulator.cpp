@@ -493,19 +493,18 @@ void uiRegulatorTick(void) {
   const float outUi = uiEez.teplota_venkovni;
   const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
 
-  // P spočítat tady z Kp·e — stejná čísla jako na řádku pokoj/SP.
+  // P = Kp·e — stejná čísla jako na řádku pokoj/SP.
   const float errUi = roomUiOk ? (roomSp - roomUi) : snap.error_c;
   float pUi = 0.0f;
   if (!snap.classic_equitherm && !snap.eco_mode && roomUiOk) {
-    const float scale = (errUi < 0.0f) ? REG_COOL_GAIN_SCALE : 1.0f;
-    pUi = cfg->kp * scale * errUi;
+    pUi = cfg->kp * errUi;
   }
 
   const char* modeTxt = "Rucni SP vody (regulator pauza)";
   if (snap.classic_equitherm) {
     modeTxt = "Ekviterm - SP vody = krivka + korekce";
   } else if (snap.active) {
-    modeTxt = snap.eco_mode ? "Pokoj PI - Eco (kompresor vyp.)"
+    modeTxt = snap.eco_mode ? "Pokoj PI - Eco (SP vody min)"
                             : "Pokoj PI - bezna regulace";
   }
 
@@ -535,8 +534,10 @@ void uiRegulatorTick(void) {
   }
   setLabelIfChanged(regulatorObj.lbl_live, line);
 
-  snprintf(line, sizeof(line), "Kp %.1f  Ki %.2f  Kd %.1f  (jen pokoj PI)",
-           (double)cfg->kp, (double)cfg->ki, (double)cfg->kd);
+  snprintf(line, sizeof(line),
+           "Kp %.1f  Ki %.2f  Kd %.1f  Eco+%.1f",
+           (double)cfg->kp, (double)cfg->ki, (double)cfg->kd,
+           (double)REG_ECO_HYST_C);
   setLabelIfChanged(regulatorObj.lbl_pid, line);
 
   if (snap.classic_equitherm) {

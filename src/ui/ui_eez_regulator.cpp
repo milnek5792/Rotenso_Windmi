@@ -487,28 +487,20 @@ void uiRegulatorTick(void) {
         LV_PART_MAIN | LV_STATE_DEFAULT);
   }
 
-  const float roomUi = snap.room_ok ? snap.room_c : uiEez.teplota_vnitrni;
-  const bool roomUiOk = snap.room_ok || (roomUi > (UI_TEPLOTA_NEPLATNA + 100.0f));
   const float roomSp = snap.room_sp_c;
-  const float outUi = uiEez.teplota_venkovni;
-  const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
-
-  // P = Kp·e — stejná čísla jako na řádku pokoj/SP.
-  const float errUi = roomUiOk ? (roomSp - roomUi) : snap.error_c;
-  float pUi = 0.0f;
-  if (!snap.classic_equitherm && !snap.eco_mode && roomUiOk) {
-    pUi = cfg->kp * errUi;
-  }
+  const bool roomUiOk =
+      snap.room_ok && snap.room_c > (UI_TEPLOTA_NEPLATNA + 100.0f);
+  const bool outUiOk =
+      snap.outdoor_ok && snap.outdoor_c > (UI_TEPLOTA_NEPLATNA + 100.0f);
 
   const char* modeTxt = "Rucni SP vody (regulator pauza)";
   if (snap.classic_equitherm) {
     modeTxt = "Ekviterm - SP vody = krivka + korekce";
   } else if (snap.active) {
-    modeTxt = snap.eco_mode ? "Pokoj PI - Eco (SP vody min)"
-                            : "Pokoj PI - bezna regulace";
+    modeTxt = "Pokoj PI - bezna regulace";
   }
 
-  char line[280];
+  char line[360];
   if (snap.classic_equitherm) {
     snprintf(line, sizeof(line),
              "%s\n"
@@ -516,40 +508,51 @@ void uiRegulatorTick(void) {
              "venku %.1f   body vody %.0f / %.0f C\n"
              "%s",
              modeTxt, (double)snap.t_water_sp_c, (double)cfg->offset_c,
-             outUiOk ? (double)outUi : -999.0, (double)cfg->t_water_cold_c,
-             (double)cfg->t_water_warm_c, s_dirty ? "*" : "");
+             outUiOk ? (double)snap.outdoor_c : -999.0,
+             (double)cfg->t_water_cold_c, (double)cfg->t_water_warm_c,
+             s_dirty ? "*" : "");
   } else {
+    // Celý výpočet z jednoho ticku: e, P, I, corr=P+I, zaklad+corr=SP.
+    const float sumPI = snap.p_term_c + snap.i_term_c;
     snprintf(line, sizeof(line),
              "%s\n"
-             "zaklad %.1f + PI %.1f = %.1f  MB %u C\n"
-             "e %.2f -> P %.2f (Kp*e)  I %.2f\n"
+             "e %.2f  P %.2f  I %.2f  corr %.2f\n"
+             "corr=P+I %.2f  zaklad %.1f + corr = %.1f\n"
+             "MB %u C   e_zive %.2f   dalsi %lus\n"
              "pokoj %.1f / SP %.1f   venku %.1f\n"
              "senzor %s%s",
-             modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,
-             (double)snap.t_water_sp_c, (unsigned)snap.t_water_c,
-             (double)errUi, (double)pUi, (double)snap.i_term_c,
-             roomUiOk ? (double)roomUi : -999.0, (double)roomSp,
-             outUiOk ? (double)outUi : -999.0,
+             modeTxt, (double)snap.error_c, (double)snap.p_term_c,
+             (double)snap.i_term_c, (double)snap.pid_corr_c, (double)sumPI,
+             (double)snap.eq_base_c, (double)snap.t_water_sp_c,
+             (unsigned)snap.t_water_c, (double)snap.error_live_c,
+             (unsigned long)((snap.ms_to_next_pid + 999u) / 1000u),
+             roomUiOk ? (double)snap.room_c : -999.0, (double)roomSp,
+             outUiOk ? (double)snap.outdoor_c : -999.0,
              snap.room_ok ? "OK" : "OFF", s_dirty ? " *" : "");
   }
   setLabelIfChanged(regulatorObj.lbl_live, line);
 
-  snprintf(line, sizeof(line),
-           "Kp %.1f  Ki %.2f  Kd %.1f  Eco+%.1f",
-           (double)cfg->kp, (double)cfg->ki, (double)cfg->kd,
-           (double)REG_ECO_HYST_C);
+  snprintf(line, sizeof(line), "Kp %.1f  Ki %.2f  Kd %.1f", (double)cfg->kp,
+           (double)cfg->ki, (double)cfg->kd);
   setLabelIfChanged(regulatorObj.lbl_pid, line);
 
+  // Stejná čísla jako vlevo (Stav) — výpočet z posledního PID ticku.
   if (snap.classic_equitherm) {
     snprintf(line, sizeof(line),
-             "klasicka ekviterm: SP vody = f(venku) + korekce %+.0f C",
+             "ekviterm: SP=f(venku)+korekce %+.0f",
              (double)cfg->offset_c);
+  } else if (snap.active) {
+    snprintf(line, sizeof(line),
+             "e %.2f P %.2f I %.2f corr %.2f | %.1f+corr=%.1f",
+             (double)snap.error_c, (double)snap.p_term_c,
+             (double)snap.i_term_c, (double)snap.pid_corr_c,
+             (double)snap.eq_base_c, (double)snap.t_water_sp_c);
   } else if (snap.use_equitherm) {
     snprintf(line, sizeof(line),
-             "pokoj PI: ekv zaklad + PI kor -5..+3  (offset %+.0f)",
+             "pauza — ekv zaklad + PI -5..+3 (offset %+.0f)",
              (double)cfg->offset_c);
   } else {
-    snprintf(line, sizeof(line), "pokoj PI: zaklad 32.5 C + PI korekce");
+    snprintf(line, sizeof(line), "pauza — zaklad 32.5 + PI");
   }
   setLabelIfChanged(regulatorObj.lbl_curve, line);
 

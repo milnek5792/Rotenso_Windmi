@@ -1,4 +1,4 @@
-// climate_regulator.cpp — ekviterm + standardní PI + EMA venku + Eco pojistka
+// climate_regulator.cpp — ekviterm + standardní PI + EMA venku
 #include "climate_regulator.h"
 
 #include "climate_room.h"
@@ -40,7 +40,6 @@ float s_pidCorr = 0.0f;
 float s_lastP = 0.0f;
 float s_lastError = 0.0f;
 bool s_havePrev = false;
-bool s_eco = false;
 bool s_cfgSavePending = false;
 uint32_t s_cfgSaveRequestMs = 0;
 bool s_roomSpSavePending = false;
@@ -245,7 +244,6 @@ void adoptOutput(const char* why) {
   s_prevError = 0.0f;
   s_havePrev = false;
   s_lastError = 0.0f;
-  s_eco = false;
   ESP_LOGI(TAG, "adopt base=%.1f corr=%.1f T=%.1f I=%.1f — %s", (double)base,
            (double)s_pidCorr, (double)s_tWater, (double)s_iTerm,
            why ? why : "?");
@@ -344,8 +342,6 @@ void climateRegulatorSetUseEquitherm(bool on) {
 
 bool climateRegulatorUseEquitherm(void) { return s_cfg.use_equitherm != 0; }
 
-bool climateRegulatorIsEcoMode(void) { return s_eco; }
-
 void climateRegulatorAdjustOffset(float deltaC) {
   float v = roundf(s_cfg.offset_c + deltaC);
   s_cfg.offset_c = clampf(v, REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
@@ -411,7 +407,6 @@ void climateRegulatorInit(void) {
     memset(s_hist, 0, sizeof(s_hist));
   }
   s_wasAuto = false;
-  s_eco = false;
   s_haveEqBase = false;
   adoptOutput("init");
   ESP_LOGI(TAG,
@@ -470,20 +465,83 @@ void climateRegulatorAdjustRoomSp(float deltaC) {
   climateRegulatorSetRoomSp(s_cfg.room_sp_c + deltaC);
 }
 
-void climateRegulatorSetRoomSp(float c) {
-  c = roundf(c * 2.0f) / 2.0f;
-  s_cfg.room_sp_c = clampf(c, 18.0f, 24.0f);
-  s_roomSpSavePending = true;
-  s_roomSpSaveRequestMs = millis();
-  // Bez ImmediateTick — MQTT +/- by jinak hned psalo SP vody + NVS a shazovalo SDIO.
-  // HMI volá climateRegulatorRequestImmediateTick() samo.
-}
-
 float climateRegulatorRoomSpEffective(void) {
   // Plánový útlum snižuje SP pokoje jen v pokojovém PI; u ekvitermy jde do vody.
   const float off =
       (uiEez.rezim == UI_REZIM_AUTO) ? s_planRoomOffset : 0.0f;
   return clampf(s_cfg.room_sp_c + off, 16.0f, 24.0f);
+}
+
+namespace {
+
+/** Po skoku efektivního SP pokoje (útlum i ruční SP):
+ *  změna znaménka e → I=0, corr=P; jinak bumpeless I := corr − Kp·e. */
+void retargetIntegralForNewRoomSp(const char* why) {
+  if (isClassicEquithermMode()) {
+    return;
+  }
+  if (!climateRoomIsOk()) {
+    return;
+  }
+  const float roomC = climateRoomTempC();
+  if (isnan(roomC) || roomC <= (UI_TEPLOTA_NEPLATNA + 100.0f)) {
+    return;
+  }
+  constexpr float kEps = 0.05f;
+  const float roomSp = climateRegulatorRoomSpEffective();
+  const float e = roomSp - roomC;
+  const float p = s_cfg.kp * e;
+  const float corrOld = s_pidCorr;
+  const float ePrev = s_lastError;
+  const bool dirChange =
+      (ePrev < -kEps && e > kEps) || (ePrev > kEps && e < -kEps);
+
+  if (dirChange) {
+    s_iTerm = 0.0f;
+    s_pidCorr = clampf(p, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    s_lastP = p;
+    s_lastError = e;
+    s_prevError = e;
+    s_havePrev = true;
+    s_tWaterRaw = s_eqBase + s_pidCorr;
+    s_tWater = clampf(s_tWaterRaw, kOutMin, kOutMax);
+    ESP_LOGI(TAG,
+             "I=0 dir flip e %.2f->%.2f P=%.2f corr %.2f->%.2f T=%.1f — %s",
+             (double)ePrev, (double)e, (double)p, (double)corrOld,
+             (double)s_pidCorr, (double)s_tWater, why ? why : "?");
+    return;
+  }
+
+  float iNew = clampf(corrOld - p, REG_CORR_MIN_C, REG_CORR_MAX_C);
+  float corr = clampf(p + iNew, REG_CORR_MIN_C, REG_CORR_MAX_C);
+  s_iTerm = clampf(corr - p, REG_CORR_MIN_C, REG_CORR_MAX_C);
+  s_pidCorr = corr;
+  s_lastP = p;
+  s_lastError = e;
+  s_prevError = e;
+  s_havePrev = true;
+  s_tWaterRaw = s_eqBase + s_pidCorr;
+  s_tWater = clampf(s_tWaterRaw, kOutMin, kOutMax);
+  ESP_LOGI(TAG,
+           "I retarget e=%.2f P=%.2f I=%.2f corr %.2f->%.2f T=%.1f — %s",
+           (double)e, (double)p, (double)s_iTerm, (double)corrOld,
+           (double)s_pidCorr, (double)s_tWater, why ? why : "?");
+}
+
+}  // namespace
+
+void climateRegulatorSetRoomSp(float c) {
+  c = roundf(c * 2.0f) / 2.0f;
+  c = clampf(c, 18.0f, 24.0f);
+  if (c == s_cfg.room_sp_c) {
+    return;
+  }
+  s_cfg.room_sp_c = c;
+  s_roomSpSavePending = true;
+  s_roomSpSaveRequestMs = millis();
+  retargetIntegralForNewRoomSp("room SP");
+  // Bez ImmediateTick — MQTT +/- by jinak hned psalo SP vody + NVS a shazovalo SDIO.
+  // HMI volá climateRegulatorRequestImmediateTick() samo.
 }
 
 void climateRegulatorSetPlanRoomOffset(float offsetC) {
@@ -492,6 +550,7 @@ void climateRegulatorSetPlanRoomOffset(float offsetC) {
     return;
   }
   s_planRoomOffset = v;
+  retargetIntegralForNewRoomSp("utlum");
   climateRegulatorRequestImmediateTick();
   // Tab/PWA ukazují effective SP — tele musí hned přepočítat útlum.
   netMqttNotifySetpointChanged();
@@ -519,7 +578,7 @@ void climateRegulatorGetSnapshot(RegulatorSnapshot* out) {
   const float roomSp = climateRegulatorRoomSpEffective();
   const float roomC = roomOk ? climateRoomTempC() : UI_TEPLOTA_NEPLATNA;
 
-  // Živá chyba pokoje (ne jen hodnota z posledního PID ticku).
+  // Živá chyba (UI); P/I/corr ve výpisu = poslední PID tick (sedí dohromady).
   const bool roomValid =
       roomOk && !isnan(roomC) && (roomC > (UI_TEPLOTA_NEPLATNA + 100.0f));
   float errLive = s_lastError;
@@ -527,26 +586,20 @@ void climateRegulatorGetSnapshot(RegulatorSnapshot* out) {
     errLive = roomSp - roomC;
   }
 
-  // P = Kp·e z živé chyby. V Eco/ekvitermě = 0.
-  float pLive = 0.0f;
-  if (!classic && !s_eco && roomValid) {
-    pLive = s_cfg.kp * errLive;
-  }
-
   out->t_water_sp_c = s_tWater;
   out->t_water_raw_c = s_tWaterRaw;
   out->eq_base_c = s_eqBase;
   out->pid_corr_c = s_pidCorr;
-  out->p_term_c = pLive;
+  out->p_term_c = classic ? 0.0f : s_lastP;
   out->i_term_c = s_iTerm;
-  out->error_c = errLive;
+  out->error_c = s_lastError;
+  out->error_live_c = errLive;
   out->room_sp_c = roomSp;
   out->room_c = roomC;
   const bool outOk = lgMaCerstoA0() && mVenkovniOk && !isnan(mVenkovniC);
   out->outdoor_c = outOk ? mVenkovniC : UI_TEPLOTA_NEPLATNA;
-  out->t_water_c = waterToBusC(s_tWater, s_eco ? -1.0f : errLive);
+  out->t_water_c = waterToBusC(s_tWater, errLive);
   out->active = active;
-  out->eco_mode = s_eco;
   out->room_ok = roomOk;
   out->outdoor_ok = outOk;
   out->use_equitherm = (s_cfg.use_equitherm != 0) || classic;
@@ -590,7 +643,7 @@ void climateRegulatorTick(void) {
   const bool classic = isClassicEquithermMode();
   if (!active) {
     if (s_wasAuto) {
-      ESP_LOGI(TAG, "leave regulator — paused (eco=%d)", (int)s_eco);
+      ESP_LOGI(TAG, "leave regulator — paused");
     }
     s_wasAuto = false;
     return;
@@ -627,7 +680,6 @@ void climateRegulatorTick(void) {
 
   if (classic) {
     // SP vody = ekvitermní křivka (+ offset_c) + plánový útlum (záporný)
-    s_eco = false;
     s_lastP = 0.0f;
     s_pidCorr = 0.0f;
     s_iTerm = 0.0f;
@@ -647,58 +699,36 @@ void climateRegulatorTick(void) {
     err = roomSp - roomC;
     s_lastError = err;
 
-    if (roomC >= (roomSp + REG_ECO_HYST_C)) {
-      if (!s_eco) {
-        ESP_LOGI(TAG, "Eco ON — I zmrazen=%.2f (room=%.1f >= sp+%.1f)",
-                 (double)s_iTerm, (double)roomC, (double)REG_ECO_HYST_C);
-      }
-      s_eco = true;
-    } else if (roomC <= roomSp) {
-      if (s_eco) {
-        ESP_LOGI(TAG, "Eco OFF — navrat AUTOMATIC I=%.2f", (double)s_iTerm);
-      }
-      s_eco = false;
+    // Standardní PI: e = SP − T, I += Ki·e, corr = Kp·e + I (+ Kd),
+    // SP_vody = base + corr (clamp −5…+3, anti-windup na I).
+    float d = 0.0f;
+    if (s_havePrev) {
+      d = s_cfg.kd * (err - s_prevError);
     }
+    s_prevError = err;
+    s_havePrev = true;
 
-    if (s_eco) {
-      s_lastP = 0.0f;
-      s_pidCorr = s_iTerm;
-      s_tWater = kOutMin;
-      s_tWaterRaw = kOutMin;
-      ESP_LOGI(TAG, "Eco mod — SP vody %d C (kompresor off) I=%.2f e=%.2f",
-               (int)REG_T_WATER_MIN_C, (double)s_iTerm, (double)err);
-    } else {
-      // Standardní PI: e = SP − T, I += Ki·e, corr = Kp·e + I (+ Kd),
-      // SP_vody = base + corr (clamp −5…+3, anti-windup na I).
-      float d = 0.0f;
-      if (s_havePrev) {
-        d = s_cfg.kd * (err - s_prevError);
-      }
-      s_prevError = err;
-      s_havePrev = true;
+    s_iTerm += s_cfg.ki * err;
+    const float p = s_cfg.kp * err;
+    s_lastP = p;
+    float corr = p + s_iTerm + d;
+    corr = clampf(corr, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    s_iTerm = corr - p - d;
+    s_iTerm = clampf(s_iTerm, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    s_pidCorr = corr;
 
-      s_iTerm += s_cfg.ki * err;
-      const float p = s_cfg.kp * err;
-      s_lastP = p;
-      float corr = p + s_iTerm + d;
-      corr = clampf(corr, REG_CORR_MIN_C, REG_CORR_MAX_C);
-      s_iTerm = corr - p - d;
-      s_iTerm = clampf(s_iTerm, REG_CORR_MIN_C, REG_CORR_MAX_C);
-      s_pidCorr = corr;
+    const float tRaw = base + corr;
+    const float t = clampf(tRaw, kOutMin, kOutMax);
+    s_tWaterRaw = tRaw;
+    s_tWater = t;
 
-      const float tRaw = base + corr;
-      const float t = clampf(tRaw, kOutMin, kOutMax);
-      s_tWaterRaw = tRaw;
-      s_tWater = t;
-
-      ESP_LOGI(TAG,
-               "Bezna regulace — zaklad=%.1f korekce=%.2f (P=%.1f I=%.1f) "
-               "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f tc=%d",
-               (double)base, (double)corr, (double)p, (double)s_iTerm,
-               (double)t, (double)err, (double)roomC, (double)roomSp,
-               outOk ? (double)outC : -999.0,
-               rawOk ? (double)rawC : -999.0, (int)tcBezi);
-    }
+    ESP_LOGI(TAG,
+             "Bezna regulace — zaklad=%.1f korekce=%.2f (P=%.1f I=%.1f) "
+             "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f tc=%d",
+             (double)base, (double)corr, (double)p, (double)s_iTerm,
+             (double)t, (double)err, (double)roomC, (double)roomSp,
+             outOk ? (double)outC : -999.0,
+             rawOk ? (double)rawC : -999.0, (int)tcBezi);
   } else {
     s_lastError = 0.0f;
     s_lastP = 0.0f;
@@ -709,7 +739,7 @@ void climateRegulatorTick(void) {
              (double)s_tWater, (double)base, (double)s_iTerm);
   }
 
-  const uint8_t tBus = waterToBusC(s_tWater, s_eco ? -1.0f : err);
+  const uint8_t tBus = waterToBusC(s_tWater, err);
 
   // Zápis SP jen když session běží a plán nechce VYP
   if (tcBezi && !s_planStop) {

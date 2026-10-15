@@ -1,4 +1,4 @@
-// climate_regulator.h — ekviterm + standardní PI + Eco pojistka
+// climate_regulator.h — ekviterm + standardní PI
 #ifndef CLIMATE_REGULATOR_H
 #define CLIMATE_REGULATOR_H
 
@@ -18,9 +18,6 @@ extern "C" {
 /** PI korekce k ekvitermnímu základu [°C]. */
 #define REG_CORR_MIN_C (-5.0f)
 #define REG_CORR_MAX_C (3.0f)
-
-/** Eco pojistka: vstup při SP+hyst → SP vody na minimum; návrat při ≤ SP. */
-#define REG_ECO_HYST_C (1.0f)
 
 /** EMA venkovní teploty: τ při oteplení / ochlazení [s]. */
 #define REG_OUT_FILT_TAU_WARM_S (600.0f)
@@ -61,16 +58,16 @@ struct RegulatorSnapshot {
   float t_water_sp_c;   // výstup po clamp [°C]
   float t_water_raw_c;  // před clampem [°C]
   float eq_base_c;      // ekviterm / fallback základ
-  float pid_corr_c;     // PI korekce (−5…+3)
-  float p_term_c;       // živé Kp·e; 0 v Eco/ekvitermě
-  float i_term_c;       // integrál (zmražen v Eco)
-  float error_c;        // živé SP_pokoj − T_pokoj
+  float pid_corr_c;     // PI korekce (−5…+3), z posledního ticku
+  float p_term_c;       // P z posledního ticku (s_lastP); sedí s I a corr
+  float i_term_c;       // integrál
+  float error_c;        // chyba z posledního ticku (s_lastError)
+  float error_live_c;   // živé SP_pokoj − T_pokoj (mezi ticky)
   float room_sp_c;
   float room_c;
   float outdoor_c;
-  uint8_t t_water_c;    // zaokrouhleno pro LIN
+  uint8_t t_water_c;    // zaokrouhleno pro Modbus
   bool active;
-  bool eco_mode;
   bool room_ok;
   bool outdoor_ok;
   bool use_equitherm;
@@ -103,7 +100,6 @@ RegulatorConfig* climateRegulatorGetConfigMutable(void);
 void climateRegulatorSetDefaults(RegulatorConfig* cfg);
 void climateRegulatorSetUseEquitherm(bool on);
 bool climateRegulatorUseEquitherm(void);
-bool climateRegulatorIsEcoMode(void);
 /** Posun ekvitermní křivky ±1 °C (clamp 0±5). */
 void climateRegulatorAdjustOffset(float deltaC);
 /** Ekvitermní SP vody pro danou venkovní teplotu (včetně offset_c). */

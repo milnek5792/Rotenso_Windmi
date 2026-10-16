@@ -1328,6 +1328,20 @@ void mqttWorker(void* /*arg*/) {
       }
     }
 
+    // Wi-Fi pryč — worker jinak přeskočí loop a s_connected zůstane true
+    // → MQTT signálka svítí i bez Wi-Fi.
+    if (s_connected && !netWifiIsConnected()) {
+      if (xSemaphoreTake(s_mtx, pdMS_TO_TICKS(80)) == pdTRUE) {
+        Serial.println("[MQTT] Wi-Fi ztrata — session stop");
+        hardStopMqttSession("wifi lost");
+        netSdioSetMqttSession(false);
+        netSdioEndMqtt();
+        setStatus("Nejdřív Wi-Fi");
+        s_lastReconnectMs = millis();
+        xSemaphoreGive(s_mtx);
+      }
+    }
+
     if (s_requestConnect) {
       if (!s_enabled || !netWifiIsConnected()) {
         s_requestConnect = false;
@@ -1515,7 +1529,10 @@ void netMqttConnect() {
   s_requestConnect = true;
 }
 
-bool netMqttIsConnected() { return s_connected; }
+bool netMqttIsConnected() {
+  // Bez Wi-Fi nesvítit MQTT (i kdyby s_connected ještě nestihl spadnout).
+  return s_connected && netWifiIsConnected();
+}
 
 bool netMqttBootSettled() { return s_bootSettled; }
 

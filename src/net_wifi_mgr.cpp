@@ -314,6 +314,18 @@ void netWifiTick() {
     return;
   }
 
+  // Ztráta z Connected — dřív se phase nechal na kConnected a tick hned
+  // returnoval → žádný reconnect a MQTT si držel s_connected=true.
+  if (s_phase == WifiPhase::kConnected || s_connected) {
+    Serial.println("[NET] Wi-Fi ztrata — reconnect");
+    clearRuntimeNetworkInfo();
+    s_phase = WifiPhase::kFailed;
+    s_failStartedMs = millis();
+    setStatus("Odpojeno — obnovuji");
+    WiFi.disconnect(false, false);
+    return;
+  }
+
   // Po failu zkus znovu — jinak zůstane wifi=0 navždy.
   if (s_phase == WifiPhase::kFailed || s_phase == WifiPhase::kIdle) {
     if (s_phase == WifiPhase::kFailed &&

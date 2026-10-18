@@ -10,12 +10,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicLong
 
 /**
- * MQTT session žije s procesem aplikace — ne s Activity/ViewModel.
- * Po delší pauze na pozadí Android/NAT často nechá mrtvý socket; při návratu
- * proto vynutíme nový connect (HiveMQ auto-reconnect sám nestačí).
+ * MQTT jen když je appka v popředí.
+ * onStop = odpojit; onStart = znovu připojit (autoConnect + uložené údaje).
  */
 class MqttSessionController(
     private val settingsStore: SettingsStore,
@@ -25,18 +23,19 @@ class MqttSessionController(
     @Volatile
     private var latest: MqttSettings? = null
 
-    private val backgroundedAtMs = AtomicLong(0)
+    @Volatile
+    private var appInForeground = false
 
     private val lifecycle = object : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
-            scope.launch { ensureConnected(fromForeground = true) }
+            appInForeground = true
+            scope.launch { connectIfNeeded(retry = true) }
         }
 
         override fun onStop(owner: LifecycleOwner) {
-            backgroundedAtMs.set(System.currentTimeMillis())
-            if (mqtt.isConnected()) {
-                mqtt.publishWatch(false)
-            }
+            appInForeground = false
+            // Na pozadí neběží — čistý disconnect (včetně watch OFF).
+            mqtt.disconnect(sendWatchOff = true)
         }
     }
 
@@ -45,10 +44,9 @@ class MqttSessionController(
         scope.launch {
             settingsStore.settings.collectLatest { s ->
                 latest = s
-                if (!s.autoConnect) {
-                    return@collectLatest
+                if (appInForeground) {
+                    connectIfNeeded(retry = false)
                 }
-                ensureConnected(fromForeground = false)
             }
         }
     }
@@ -58,55 +56,22 @@ class MqttSessionController(
             ?: runCatching { settingsStore.settings.first() }.getOrNull()?.also { latest = it }
     }
 
-    private suspend fun ensureConnected(fromForeground: Boolean) {
+    private suspend fun connectIfNeeded(retry: Boolean) {
         val s = loadSettings() ?: return
         if (!s.autoConnect) return
         if (s.host.isBlank() || s.user.isBlank() || s.password.isBlank()) return
+        if (!appInForeground) return
 
-        if (fromForeground) {
-            reconnectFromForeground(s)
-            return
-        }
-
-        if (mqtt.isConnected()) return
-        if (mqtt.sessionActive()) return
         mqtt.connect(s)
-    }
+        if (!retry) return
 
-    private suspend fun reconnectFromForeground(s: MqttSettings) {
-        val bgAt = backgroundedAtMs.getAndSet(0L)
-        val bgMs = if (bgAt > 0L) System.currentTimeMillis() - bgAt else 0L
-
-        val needFresh = when {
-            // Delší pauza → socket skoro jistě mrtvý / doze.
-            bgMs >= BACKGROUND_FORCE_RECONNECT_MS -> true
-            !mqtt.isConnected() -> true
-            mqtt.isStuckConnecting(STUCK_CONNECTING_MS) -> true
-            else -> false
-        }
-
-        if (needFresh) {
-            mqtt.connect(s)
-            // Po doze první pokus občas selže — jeden retry.
-            delay(CONNECT_VERIFY_MS)
-            if (!mqtt.isConnected() && s.autoConnect) {
-                mqtt.connect(s)
-            }
-            return
-        }
-
-        mqtt.publishWatch(true)
-        delay(WATCH_VERIFY_MS)
-        if (!mqtt.isConnected()) {
+        delay(CONNECT_RETRY_MS)
+        if (appInForeground && s.autoConnect && !mqtt.isConnected()) {
             mqtt.connect(s)
         }
     }
 
     companion object {
-        /** Po tolika ms na pozadí vždy nový MQTT connect. */
-        private const val BACKGROUND_FORCE_RECONNECT_MS = 15_000L
-        private const val STUCK_CONNECTING_MS = 12_000L
-        private const val CONNECT_VERIFY_MS = 4_000L
-        private const val WATCH_VERIFY_MS = 2_000L
+        private const val CONNECT_RETRY_MS = 3_500L
     }
 }

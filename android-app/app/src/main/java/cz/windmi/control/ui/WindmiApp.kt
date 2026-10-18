@@ -1,0 +1,470 @@
+package cz.windmi.control.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.outlined.AcUnit
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import cz.windmi.control.ui.theme.Bg
+import cz.windmi.control.ui.theme.Border
+import cz.windmi.control.ui.theme.BtnRoundBorder
+import cz.windmi.control.ui.theme.Ekv
+import cz.windmi.control.ui.theme.Fault
+import cz.windmi.control.ui.theme.FaultText
+import cz.windmi.control.ui.theme.Muted
+import cz.windmi.control.ui.theme.Ok
+import cz.windmi.control.ui.theme.Panel
+import cz.windmi.control.ui.theme.Room
+import cz.windmi.control.ui.theme.Text as TextColor
+import cz.windmi.control.ui.theme.Warn
+import cz.windmi.control.ui.theme.Water
+
+@Composable
+fun WindmiApp(viewModel: WindmiViewModel) {
+    val state by viewModel.ui.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onForeground(true)
+                Lifecycle.Event.ON_PAUSE -> viewModel.onForeground(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Bg)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+    ) {
+        TopBar(state)
+        if (state.faultVisible && state.faultText.isNotBlank()) {
+            FaultBanner(state.faultText)
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        ) {
+            when (state.selectedTab) {
+                0 -> HomeScreen(state, viewModel)
+                else -> SettingsScreen(state, viewModel)
+            }
+        }
+        BottomNav(selected = state.selectedTab, onSelect = viewModel::selectTab)
+    }
+}
+
+@Composable
+private fun TopBar(state: AppUiState) {
+    val mqtt = state.mqttSig()
+    val lin = state.linSig()
+    val mqttLabel = state.flashMessage ?: mqtt.second
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Windmi", color = TextColor, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SigChip(icon = Icons.Filled.Wifi, meta = mqtt.first to mqttLabel)
+            SigChip(label = "MB", meta = lin)
+        }
+    }
+    HorizontalDivider(color = Border)
+}
+
+@Composable
+private fun SigChip(meta: Pair<SigState, String>, icon: ImageVector? = null, label: String? = null) {
+    val color = when (meta.first) {
+        SigState.Ok -> Ok
+        SigState.Warn -> Warn
+        SigState.Error -> Fault
+        SigState.Off -> Muted
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Panel)
+            .border(1.dp, Border, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = meta.second, tint = color, modifier = Modifier.size(18.dp))
+        } else {
+            Text(label ?: "", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun FaultBanner(text: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Fault.copy(alpha = 0.18f))
+            .padding(12.dp),
+    ) {
+        Text("Poruchové hlášení", color = FaultText, fontWeight = FontWeight.Bold)
+        Text(text, color = FaultText)
+    }
+}
+
+@Composable
+private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
+    val titleColor = when (state.regMode) {
+        RegMode.Room -> Room
+        RegMode.Equitherm -> Ekv
+        RegMode.Water -> Water
+    }
+    val title = when (state.regMode) {
+        RegMode.Room -> "Nastavení pokojové teploty"
+        RegMode.Equitherm -> "Ekvitermní SP vody"
+        RegMode.Water -> "Nastavení teploty vody"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(title, color = titleColor, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier = Modifier.height(12.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            RoundBtn("−") { vm.adjustSetpoint(-1) }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        state.displaySetpoint(),
+                        color = TextColor,
+                        fontSize = 56.sp,
+                        fontWeight = FontWeight.Light,
+                    )
+                    Text(" °C", color = Muted, fontSize = 20.sp, modifier = Modifier.padding(bottom = 10.dp))
+                }
+                if (state.regMode == RegMode.Equitherm && state.mqttConnected && state.eqOffset != null) {
+                    Text("Korekce ${formatOffset(state.eqOffset)} °C", color = Ekv, fontSize = 13.sp)
+                }
+            }
+            RoundBtn("+") { vm.adjustSetpoint(1) }
+        }
+        Spacer(Modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeChip("Pokoj", state.regMode == RegMode.Room, Room) { vm.setRegMode(RegMode.Room) }
+            ModeChip("Ekviterm", state.regMode == RegMode.Equitherm, Ekv) { vm.setRegMode(RegMode.Equitherm) }
+            ModeChip("Ruční", state.regMode == RegMode.Water, Water) { vm.setRegMode(RegMode.Water) }
+        }
+        Spacer(Modifier = Modifier.height(20.dp))
+        TempGrid(state)
+        Spacer(Modifier = Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PowerBtn(
+                label = "START",
+                active = state.power,
+                color = Ok,
+                modifier = Modifier.weight(1f),
+            ) { vm.setPower(true) }
+            PowerBtn(
+                label = "STOP",
+                active = !state.power && state.mqttConnected,
+                color = Fault,
+                modifier = Modifier.weight(1f),
+            ) { vm.setPower(false) }
+        }
+        Spacer(Modifier = Modifier.height(18.dp))
+        StatusRow(state)
+    }
+}
+
+@Composable
+private fun RoundBtn(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .background(Panel)
+            .border(1.dp, BtnRoundBorder, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = TextColor, fontSize = 28.sp)
+    }
+}
+
+@Composable
+private fun ModeChip(label: String, active: Boolean, accent: Color, onClick: () -> Unit) {
+    val bg = if (active) accent.copy(alpha = 0.18f) else Panel
+    val border = if (active) accent else Border
+    val fg = if (active) accent else Muted
+    Text(
+        text = label,
+        color = fg,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(bg)
+            .border(1.dp, border, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun TempGrid(state: AppUiState) {
+    val live = state.mqttConnected
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TempCard("Vnitřní teplota", formatTemp(if (live) state.temps.room else null, 1), Modifier.weight(1f))
+            TempCard("Venkovní teplota", formatTemp(if (live) state.temps.outdoor else null, 1), Modifier.weight(1f), Water)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TempCard("Teplota na vstupu", formatTemp(if (live) state.temps.inlet else null, 0), Modifier.weight(1f))
+            TempCard("Teplota na výstupu", formatTemp(if (live) state.temps.outlet else null, 0), Modifier.weight(1f), Room)
+        }
+    }
+}
+
+@Composable
+private fun TempCard(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = TextColor) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Panel)
+            .border(1.dp, Border, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Text(label, color = Muted, fontSize = 12.sp)
+        Text(value, color = valueColor, fontSize = 28.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun PowerBtn(
+    label: String,
+    active: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(48.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (active) color.copy(alpha = 0.25f) else Panel,
+            contentColor = if (active) color else TextColor,
+        ),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text(label, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun StatusRow(state: AppUiState) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        StatIcon(Icons.Filled.PowerSettingsNew, state.power, "Provoz TČ")
+        StatText("🔄", state.pump, "Čerpadlo")
+        StatText("🌀", state.compressor, "Kompresor")
+        StatIcon(Icons.Outlined.AcUnit, state.defrost, "Odmrazování", warn = true)
+        StatIcon(Icons.Outlined.Bolt, state.elec, "El. topení", warn = true)
+    }
+}
+
+@Composable
+private fun StatIcon(icon: ImageVector, on: Boolean, label: String, warn: Boolean = false) {
+    val color = when {
+        on && warn -> Warn
+        on -> Ok
+        else -> Muted.copy(alpha = 0.45f)
+    }
+    Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(28.dp))
+}
+
+@Composable
+private fun StatText(glyph: String, on: Boolean, label: String) {
+    val color = if (on) Ok else Muted.copy(alpha = 0.45f)
+    Text(glyph, color = color, fontSize = 22.sp)
+}
+
+@Composable
+private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = TextColor,
+        unfocusedTextColor = TextColor,
+        focusedBorderColor = Room,
+        unfocusedBorderColor = Border,
+        focusedLabelColor = Muted,
+        unfocusedLabelColor = Muted,
+        cursorColor = Room,
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+    ) {
+        Text("Připojení MQTT", color = TextColor, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier = Modifier.height(6.dp))
+        Text(
+            "Aplikace slouží jen k ovládání. Časový plán a regulátor PID zůstávají na Tab5.",
+            color = Muted,
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = state.brokerUrl,
+            onValueChange = { vm.updateDraft(host = it) },
+            label = { Text("Broker (WSS)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = fieldColors,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+        Spacer(Modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            value = state.brokerUser,
+            onValueChange = { vm.updateDraft(user = it) },
+            label = { Text("Uživatel") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = fieldColors,
+        )
+        Spacer(Modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            value = state.brokerPassword,
+            onValueChange = { vm.updateDraft(password = it) },
+            label = { Text("Heslo") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            colors = fieldColors,
+        )
+        Spacer(Modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            value = state.topicPrefix,
+            onValueChange = { vm.updateDraft(prefix = it) },
+            label = { Text("Topic prefix") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = fieldColors,
+        )
+        Spacer(Modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = vm::connect,
+                enabled = !state.sessionActive,
+                modifier = Modifier.weight(1f),
+            ) { Text("Připojit") }
+            OutlinedButton(
+                onClick = vm::disconnect,
+                enabled = state.sessionActive,
+                modifier = Modifier.weight(1f),
+            ) { Text("Odpojit") }
+        }
+        Spacer(Modifier = Modifier.height(12.dp))
+        val statusColor = when {
+            state.mqttStatus == MqttLinkStatus.Error -> Fault
+            state.mqttConnected -> Ok
+            else -> Muted
+        }
+        Text(state.settingsStatus, color = statusColor, textAlign = TextAlign.Start)
+    }
+}
+
+@Composable
+private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
+    HorizontalDivider(color = Border)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Panel)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        NavItem("Domů", Icons.Filled.Home, selected == 0) { onSelect(0) }
+        NavItem("Nastavení", Icons.Filled.Settings, selected == 1) { onSelect(1) }
+    }
+}
+
+@Composable
+private fun NavItem(label: String, icon: ImageVector, active: Boolean, onClick: () -> Unit) {
+    val color = if (active) Room else Muted
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(120.dp)
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+    ) {
+        Icon(icon, contentDescription = label, tint = color)
+        Text(label, color = color, fontSize = 12.sp)
+    }
+}

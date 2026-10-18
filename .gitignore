@@ -34,5 +34,4 @@ docs/_modbus_extract.txt
 
 node_modules/
 package-lock.json
-!android-app/package-lock.json
 

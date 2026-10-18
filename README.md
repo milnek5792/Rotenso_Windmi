@@ -22,13 +22,13 @@ Ovládání tepelného čerpadla **Rotenso Windmi** z **M5Stack Tab5** (Modbus R
 
 Zdroj: `docs/pwa/` → GitHub Pages (viz PROJECT.md). Po změně JS bump SW cache.
 
-## Android APK
+## Android APK (nativní)
 
-PWA je zabalená přes **Capacitor** (`android-app/`) jako WebView na GitHub Pages URL.
+Nativní **Kotlin + Jetpack Compose** aplikace v `android-app/` (HiveMQ MQTT přes WSS, stejné topicy jako PWA).
 
-- Workflow: `.github/workflows/build-apk.yml` (Actions → **Build APK** → artifact `WindmiCtrl-apk`)
-- Spuštění: push do `android-app/**`, manuálně **workflow_dispatch**, nebo GitHub Release (přiloží APK)
-- Sideload: stáhni `WindmiCtrl-latest.apk` z artifactu / release a nainstaluj (povolit neznámé zdroje)
+- Workflow: `.github/workflows/build-apk.yml` → artifact `WindmiCtrl-apk`
+- Spuštění: push do `android-app/**`, **Run workflow**, nebo GitHub Release
+- Sideload: `WindmiCtrl-latest.apk` (povolit neznámé zdroje)
 
 ## Hardware (zkráceně)
 

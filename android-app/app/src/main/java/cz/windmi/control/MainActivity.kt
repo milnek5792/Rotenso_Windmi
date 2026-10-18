@@ -3,6 +3,7 @@ package cz.windmi.control
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
@@ -128,6 +129,23 @@ class MainActivity : AppCompatActivity() {
         binding.pageSettings.root.findViewById<View>(R.id.btnDisconnect).setOnClickListener {
             viewModel.disconnect()
         }
+        val pass = settings().findViewById<EditText>(R.id.cfgPass)
+        val toggle = settings().findViewById<TextView>(R.id.btnTogglePass)
+        toggle.setOnClickListener {
+            val visible = pass.transformationMethod == null
+            if (visible) {
+                pass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                pass.transformationMethod =
+                    android.text.method.PasswordTransformationMethod.getInstance()
+                toggle.alpha = 0.55f
+            } else {
+                pass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                pass.transformationMethod = null
+                toggle.alpha = 1f
+            }
+            pass.setSelection(pass.text?.length ?: 0)
+        }
+        toggle.alpha = 0.55f
     }
 
     private fun home(): View = binding.pageHome.root

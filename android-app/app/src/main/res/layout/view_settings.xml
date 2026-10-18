@@ -45,7 +45,7 @@
             android:layout_height="48dp"
             android:layout_marginTop="4dp"
             android:background="@drawable/bg_field"
-            android:hint="wss://broker.example.com:8084/mqtt"
+            android:hint="wss://n9e16b3c.ala.eu-central-1.emqxsl.com:8084/mqtt"
             android:inputType="textUri"
             android:paddingHorizontal="12dp"
             android:textColor="@color/text"
@@ -80,17 +80,36 @@
             android:textColor="@color/muted"
             android:textSize="12sp" />
 
-        <EditText
-            android:id="@+id/cfgPass"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="4dp"
-            android:background="@drawable/bg_field"
-            android:inputType="textPassword"
-            android:paddingHorizontal="12dp"
-            android:textColor="@color/text"
-            android:textColorHint="@color/muted"
-            android:textSize="14sp" />
+            android:background="@drawable/bg_field">
+
+            <EditText
+                android:id="@+id/cfgPass"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent"
+                android:inputType="textPassword"
+                android:paddingStart="12dp"
+                android:paddingEnd="48dp"
+                android:textColor="@color/text"
+                android:textColorHint="@color/muted"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/btnTogglePass"
+                android:layout_width="48dp"
+                android:layout_height="match_parent"
+                android:layout_gravity="end"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="👁"
+                android:textSize="16sp" />
+        </FrameLayout>
 
         <TextView
             android:layout_width="match_parent"

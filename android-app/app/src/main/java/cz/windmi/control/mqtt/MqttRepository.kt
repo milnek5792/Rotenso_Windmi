@@ -122,7 +122,7 @@ class MqttRepository {
         connectBuilder.send()
             .whenComplete { _, err ->
                 if (err != null && !userStopped.get()) {
-                    emit(MqttEvent.Status(MqttLinkStatus.Error, err.message ?: "Chyba MQTT"))
+                    emit(MqttEvent.Status(MqttLinkStatus.Error, friendlyError(err)))
                 }
             }
     }
@@ -325,10 +325,42 @@ class MqttRepository {
                 else -> 1883
             }
             val port = if (uri.port > 0) uri.port else defaultPort
-            val path = uri.rawPath?.ifBlank { "/mqtt" } ?: "/mqtt"
+            // HiveMQ skládá URI jako "/" + serverPath — bez leading slash (jinak //mqtt).
+            val path = (uri.rawPath ?: "mqtt")
+                .trim()
+                .trimStart('/')
+                .ifBlank { "mqtt" }
             Endpoint(host, port, path, ssl, websocket)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun friendlyError(err: Throwable): String {
+        var cur: Throwable? = err
+        while (cur?.cause != null && cur.cause !== cur) {
+            cur = cur.cause
+        }
+        val msg = (cur?.message ?: err.message).orEmpty()
+        return when {
+            msg.contains("WebSocket", ignoreCase = true) ->
+                "WebSocket selhal — zkontroluj WSS URL (…:8084/mqtt)"
+            msg.contains("SSL", ignoreCase = true) ||
+                msg.contains("TLS", ignoreCase = true) ||
+                msg.contains("certificate", ignoreCase = true) ->
+                "TLS chyba při spojení s brokerem"
+            msg.contains("UnknownHost", ignoreCase = true) ||
+                msg.contains("unable to resolve", ignoreCase = true) ->
+                "DNS: host brokeru nenalezen"
+            msg.contains("timeout", ignoreCase = true) ||
+                msg.contains("Timed out", ignoreCase = true) ->
+                "Timeout připojení k brokeru"
+            msg.contains("Not authorized", ignoreCase = true) ||
+                msg.contains("Bad user", ignoreCase = true) ||
+                msg.contains("CONNACK", ignoreCase = true) ->
+                "Odmítnuto brokerem (uživatel/heslo?)"
+            msg.isBlank() -> "Chyba MQTT"
+            else -> msg.take(120)
         }
     }
 

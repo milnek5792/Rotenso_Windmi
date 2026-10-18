@@ -23,11 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.outlined.AcUnit
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -124,7 +120,7 @@ private fun TopBar(state: AppUiState) {
     ) {
         Text("Windmi", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SigChip(icon = Icons.Filled.Wifi, meta = mqtt.first to mqttLabel)
+            SigChip(label = "MQTT", meta = mqtt.first to mqttLabel)
             SigChip(label = "MB", meta = lin)
         }
     }
@@ -330,27 +326,21 @@ private fun StatusRow(state: AppUiState) {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        StatIcon(Icons.Filled.PowerSettingsNew, state.power, "Provoz TČ")
+        StatText("⏻", state.power, "Provoz TČ")
         StatText("🔄", state.pump, "Čerpadlo")
         StatText("🌀", state.compressor, "Kompresor")
-        StatIcon(Icons.Outlined.AcUnit, state.defrost, "Odmrazování", warn = true)
-        StatIcon(Icons.Outlined.Bolt, state.elec, "El. topení", warn = true)
+        StatText("❄", state.defrost, "Odmrazování", warn = true)
+        StatText("⚡", state.elec, "El. topení", warn = true)
     }
 }
 
 @Composable
-private fun StatIcon(icon: ImageVector, on: Boolean, label: String, warn: Boolean = false) {
+private fun StatText(glyph: String, on: Boolean, label: String, warn: Boolean = false) {
     val color = when {
         on && warn -> Warn
         on -> Ok
         else -> Muted.copy(alpha = 0.45f)
     }
-    Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(28.dp))
-}
-
-@Composable
-private fun StatText(glyph: String, on: Boolean, label: String) {
-    val color = if (on) Ok else Muted.copy(alpha = 0.45f)
     Text(glyph, color = color, fontSize = 22.sp)
 }
 

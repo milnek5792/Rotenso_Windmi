@@ -54,6 +54,16 @@ jobs:
           path: android-app/build.log
           if-no-files-found: ignore
 
+      - name: Summarize Gradle errors
+        if: failure()
+        run: |
+          {
+            echo "## Gradle errors"
+            echo '```'
+            grep -E "e: |error:|FAILED|What went wrong|Execution failed|\.kt:[0-9]+" android-app/build.log | tail -n 80 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Rename APK
         run: |
           set -euo pipefail

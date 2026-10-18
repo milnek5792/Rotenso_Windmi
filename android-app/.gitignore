@@ -2,9 +2,11 @@
 /build/
 /app/build/
 /local.properties
+/.android-sdk/
 /.idea/
 *.iml
 .DS_Store
 captures/
 *.apk
 *.aab
+build.log

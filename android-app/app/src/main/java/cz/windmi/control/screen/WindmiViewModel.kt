@@ -1,8 +1,5 @@
 package cz.windmi.control.screen
 
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cz.windmi.control.data.MqttSettings
@@ -29,23 +26,22 @@ class WindmiViewModel(
     private var faultJob: Job? = null
     private var faultPending: Pair<Boolean, String>? = null
     private var flashJob: Job? = null
-    private var autoStarted = false
-
-    private val appLifecycle = object : DefaultLifecycleObserver {
-        override fun onStart(owner: LifecycleOwner) {
-            // Celá appka do popředí — ne Activity onResume (ten maže watch při běžném UI).
-            if (mqtt.isConnected()) mqtt.publishWatch(true)
-        }
-
-        override fun onStop(owner: LifecycleOwner) {
-            if (mqtt.isConnected()) mqtt.publishWatch(false)
-        }
-    }
 
     init {
-        ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycle)
+        // Session řídí MqttSessionController (Application). Tady jen UI + ruční Připojit/Odpojit.
         mqtt.setListener { event ->
             viewModelScope.launch { onMqttEvent(event) }
+        }
+        // Obnov UI stav podle aktuálního klienta (přežití Activity / návrat do appky).
+        refreshSession()
+        if (mqtt.isConnected()) {
+            _ui.update {
+                it.copy(
+                    mqttStatus = MqttLinkStatus.Connected,
+                    mqttConnected = true,
+                    sessionActive = true,
+                )
+            }
         }
         viewModelScope.launch {
             settingsStore.settings.collect { s ->
@@ -56,12 +52,6 @@ class WindmiViewModel(
                         brokerPassword = s.password,
                         topicPrefix = s.prefix,
                     )
-                }
-                if (!autoStarted && s.autoConnect && s.host.isNotBlank() &&
-                    s.user.isNotBlank() && s.password.isNotBlank()
-                ) {
-                    autoStarted = true
-                    mqtt.connect(s)
                 }
             }
         }
@@ -396,9 +386,8 @@ class WindmiViewModel(
     }
 
     override fun onCleared() {
-        ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycle)
+        // Neodpojovat MQTT — session drží Application. Jen uvolni UI listener.
         mqtt.setListener(null)
-        mqtt.disconnect(sendWatchOff = true)
         super.onCleared()
     }
 

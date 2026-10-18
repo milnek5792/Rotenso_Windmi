@@ -1,4 +1,4 @@
-package cz.windmi.control.ui.theme
+package cz.windmi.control.screen.theme
 
 import androidx.compose.ui.graphics.Color
 

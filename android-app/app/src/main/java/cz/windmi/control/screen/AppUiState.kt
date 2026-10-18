@@ -1,4 +1,4 @@
-package cz.windmi.control.ui
+package cz.windmi.control.screen
 
 enum class RegMode { Room, Equitherm, Water }
 

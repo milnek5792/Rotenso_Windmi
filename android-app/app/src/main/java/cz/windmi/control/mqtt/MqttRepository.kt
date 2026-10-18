@@ -7,8 +7,8 @@ import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient
 import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish
 import cz.windmi.control.data.MqttSettings
 import cz.windmi.control.data.SettingsStore
-import cz.windmi.control.ui.MqttLinkStatus
-import cz.windmi.control.ui.TelePatch
+import cz.windmi.control.screen.MqttLinkStatus
+import cz.windmi.control.screen.TelePatch
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.UUID

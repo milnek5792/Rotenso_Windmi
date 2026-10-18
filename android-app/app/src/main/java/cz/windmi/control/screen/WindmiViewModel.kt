@@ -1,4 +1,4 @@
-package cz.windmi.control.ui
+package cz.windmi.control.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

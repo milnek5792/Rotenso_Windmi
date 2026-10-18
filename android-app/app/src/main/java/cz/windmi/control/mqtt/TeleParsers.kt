@@ -1,6 +1,6 @@
 package cz.windmi.control.mqtt
 
-import cz.windmi.control.ui.RegMode
+import cz.windmi.control.screen.RegMode
 
 internal const val TELE_NA = "___"
 

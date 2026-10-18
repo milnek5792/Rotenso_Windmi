@@ -1,4 +1,4 @@
-package cz.windmi.control.ui
+package cz.windmi.control.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,19 +50,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import cz.windmi.control.ui.theme.Bg
-import cz.windmi.control.ui.theme.Border
-import cz.windmi.control.ui.theme.BtnRoundBorder
-import cz.windmi.control.ui.theme.Ekv
-import cz.windmi.control.ui.theme.Fault
-import cz.windmi.control.ui.theme.FaultText
-import cz.windmi.control.ui.theme.Muted
-import cz.windmi.control.ui.theme.Ok
-import cz.windmi.control.ui.theme.Panel
-import cz.windmi.control.ui.theme.Room
-import cz.windmi.control.ui.theme.TextPrimary
-import cz.windmi.control.ui.theme.Warn
-import cz.windmi.control.ui.theme.Water
+import cz.windmi.control.screen.theme.Bg
+import cz.windmi.control.screen.theme.Border
+import cz.windmi.control.screen.theme.BtnRoundBorder
+import cz.windmi.control.screen.theme.Ekv
+import cz.windmi.control.screen.theme.Fault
+import cz.windmi.control.screen.theme.FaultText
+import cz.windmi.control.screen.theme.Muted
+import cz.windmi.control.screen.theme.Ok
+import cz.windmi.control.screen.theme.Panel
+import cz.windmi.control.screen.theme.Room
+import cz.windmi.control.screen.theme.TextPrimary
+import cz.windmi.control.screen.theme.Warn
+import cz.windmi.control.screen.theme.Water
 
 @Composable
 fun WindmiApp(viewModel: WindmiViewModel) {
@@ -181,7 +181,7 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            RoundBtn("−") { vm.adjustSetpoint(-1) }
+            RoundBtn("-") { vm.adjustSetpoint(-1) }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(

@@ -10,9 +10,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import cz.windmi.control.ui.WindmiApp
-import cz.windmi.control.ui.WindmiViewModel
-import cz.windmi.control.ui.theme.WindmiTheme
+import cz.windmi.control.screen.WindmiApp
+import cz.windmi.control.screen.WindmiViewModel
+import cz.windmi.control.screen.theme.WindmiTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: WindmiViewModel by viewModels {

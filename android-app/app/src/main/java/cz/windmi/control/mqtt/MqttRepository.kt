@@ -8,7 +8,6 @@ import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish
 import cz.windmi.control.data.MqttSettings
 import cz.windmi.control.data.SettingsStore
 import cz.windmi.control.ui.MqttLinkStatus
-import cz.windmi.control.ui.RegMode
 import cz.windmi.control.ui.TelePatch
 import java.net.URI
 import java.nio.charset.StandardCharsets
@@ -41,6 +40,7 @@ class MqttRepository {
     }
     private var watchFuture: ScheduledFuture<*>? = null
     private var hydrateFuture: ScheduledFuture<*>? = null
+    private val lastStatus = AtomicReference(MqttLinkStatus.Idle)
 
     fun setListener(listener: ((MqttEvent) -> Unit)?) {
         listeners.set(listener)
@@ -53,8 +53,6 @@ class MqttRepository {
         val status = lastStatus.get()
         return status == MqttLinkStatus.Connected || status == MqttLinkStatus.Connecting
     }
-
-    private val lastStatus = AtomicReference(MqttLinkStatus.Idle)
 
     fun connect(settings: MqttSettings) {
         disconnect(sendWatchOff = false, notifyIdle = false)
@@ -70,15 +68,12 @@ class MqttRepository {
         }
 
         val clientId = "WindmiAndroid_" + UUID.randomUUID().toString().take(8)
-        val builder = MqttClient.builder()
+        var builder = MqttClient.builder()
             .useMqttVersion3()
             .identifier(clientId)
             .serverHost(endpoint.host)
             .serverPort(endpoint.port)
-            .automaticReconnect()
-            .initialDelay(1, TimeUnit.SECONDS)
-            .maxDelay(10, TimeUnit.SECONDS)
-            .applyAutomaticReconnect()
+            .automaticReconnectWithDefaultConfig()
             .addConnectedListener {
                 beginHydrate()
                 emit(MqttEvent.Status(MqttLinkStatus.Connected))
@@ -103,20 +98,22 @@ class MqttRepository {
             }
 
         if (endpoint.ssl) {
-            builder.useSslWithDefaultConfig()
+            builder = builder.sslWithDefaultConfig()
         }
         if (endpoint.websocket) {
-            builder.webSocketConfig().serverPath(endpoint.path).applyWebSocketConfig()
+            builder = builder.webSocketConfig()
+                .serverPath(endpoint.path)
+                .applyWebSocketConfig()
         }
 
         val client = builder.buildAsync()
         clientRef.set(client)
 
-        val connectBuilder = client.connectWith()
+        var connectBuilder = client.connectWith()
             .cleanSession(true)
             .keepAlive(45)
         if (settings.user.isNotBlank()) {
-            connectBuilder.simpleAuth()
+            connectBuilder = connectBuilder.simpleAuth()
                 .username(settings.user)
                 .password(settings.password.toByteArray(StandardCharsets.UTF_8))
                 .applySimpleAuth()
@@ -223,10 +220,9 @@ class MqttRepository {
     }
 
     private fun onPublish(publish: Mqtt3Publish) {
-        val topic = publish.topic.toString()
-        val payload = publish.payloadAsBytes.toString(StandardCharsets.UTF_8)
-        val retained = publish.isRetain
-        handleMessage(topic, payload, retained)
+        val topicName = publish.topic.toString()
+        val payload = String(publish.payloadAsBytes, StandardCharsets.UTF_8)
+        handleMessage(topicName, payload, publish.isRetain)
     }
 
     private fun handleMessage(fullTopic: String, raw: String, retained: Boolean) {
@@ -329,7 +325,7 @@ class MqttRepository {
                 else -> 1883
             }
             val port = if (uri.port > 0) uri.port else defaultPort
-            val path = uri.path?.ifBlank { "/mqtt" } ?: "/mqtt"
+            val path = uri.rawPath?.ifBlank { "/mqtt" } ?: "/mqtt"
             Endpoint(host, port, path, ssl, websocket)
         } catch (_: Exception) {
             null

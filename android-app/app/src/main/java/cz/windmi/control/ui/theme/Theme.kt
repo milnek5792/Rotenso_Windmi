@@ -11,8 +11,8 @@ private val scheme = darkColorScheme(
     secondary = Water,
     background = Bg,
     surface = Panel,
-    onBackground = Text,
-    onSurface = Text,
+    onBackground = TextPrimary,
+    onSurface = TextPrimary,
     error = Fault,
 )
 

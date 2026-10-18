@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Color
 val Bg = Color(0xFF121214)
 val Panel = Color(0xFF1A1A1F)
 val Border = Color(0xFF24242B)
-val Text = Color(0xFFE0E0E6)
+val TextPrimary = Color(0xFFE0E0E6)
 val Muted = Color(0xFF8E8E93)
 val Room = Color(0xFF0A84FF)
 val Water = Color(0xFFFF9F0A)

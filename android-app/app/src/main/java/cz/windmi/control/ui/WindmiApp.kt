@@ -64,7 +64,7 @@ import cz.windmi.control.ui.theme.Muted
 import cz.windmi.control.ui.theme.Ok
 import cz.windmi.control.ui.theme.Panel
 import cz.windmi.control.ui.theme.Room
-import cz.windmi.control.ui.theme.Text as TextColor
+import cz.windmi.control.ui.theme.TextPrimary
 import cz.windmi.control.ui.theme.Warn
 import cz.windmi.control.ui.theme.Water
 
@@ -122,7 +122,7 @@ private fun TopBar(state: AppUiState) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Windmi", color = TextColor, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Text("Windmi", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SigChip(icon = Icons.Filled.Wifi, meta = mqtt.first to mqttLabel)
             SigChip(label = "MB", meta = lin)
@@ -198,7 +198,7 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         state.displaySetpoint(),
-                        color = TextColor,
+                        color = TextPrimary,
                         fontSize = 56.sp,
                         fontWeight = FontWeight.Light,
                     )
@@ -252,7 +252,7 @@ private fun RoundBtn(label: String, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = TextColor, fontSize = 28.sp)
+        Text(label, color = TextPrimary, fontSize = 28.sp)
     }
 }
 
@@ -290,7 +290,7 @@ private fun TempGrid(state: AppUiState) {
 }
 
 @Composable
-private fun TempCard(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = TextColor) {
+private fun TempCard(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = TextPrimary) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
@@ -316,7 +316,7 @@ private fun PowerBtn(
         modifier = modifier.height(48.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (active) color.copy(alpha = 0.25f) else Panel,
-            contentColor = if (active) color else TextColor,
+            contentColor = if (active) color else TextPrimary,
         ),
         shape = RoundedCornerShape(12.dp),
     ) {
@@ -357,8 +357,8 @@ private fun StatText(glyph: String, on: Boolean, label: String) {
 @Composable
 private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = TextColor,
-        unfocusedTextColor = TextColor,
+        focusedTextColor = TextPrimary,
+        unfocusedTextColor = TextPrimary,
         focusedBorderColor = Room,
         unfocusedBorderColor = Border,
         focusedLabelColor = Muted,
@@ -371,7 +371,7 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("Připojení MQTT", color = TextColor, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text("Připojení MQTT", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier = Modifier.height(6.dp))
         Text(
             "Aplikace slouží jen k ovládání. Časový plán a regulátor PID zůstávají na Tab5.",

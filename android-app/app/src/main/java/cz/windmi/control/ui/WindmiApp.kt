@@ -37,7 +37,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier.Modifier
+import androidx.compose.ui.Modifier.Modifier as Mod
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -82,7 +82,7 @@ fun WindmiApp(viewModel: WindmiViewModel) {
     }
 
     Column(
-        modifier = Modifier
+        modifier = Mod
             .fillMaxSize()
             .background(Bg)
             .statusBarsPadding()
@@ -92,11 +92,7 @@ fun WindmiApp(viewModel: WindmiViewModel) {
         if (state.faultVisible && state.faultText.isNotBlank()) {
             FaultBanner(state.faultText)
         }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-        ) {
+        Box(modifier = Mod.weight(1f).fillMaxWidth()) {
             when (state.selectedTab) {
                 0 -> HomeScreen(state, viewModel)
                 else -> SettingsScreen(state, viewModel)
@@ -112,7 +108,7 @@ private fun TopBar(state: AppUiState) {
     val lin = state.linSig()
     val mqttLabel = state.flashMessage ?: mqtt.second
     Row(
-        modifier = Modifier
+        modifier = Mod
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -128,7 +124,7 @@ private fun TopBar(state: AppUiState) {
 }
 
 @Composable
-private fun SigChip(meta: Pair<SigState, String>, icon: ImageVector? = null, label: String? = null) {
+private fun SigChip(meta: Pair<SigState, String>, label: String) {
     val color = when (meta.first) {
         SigState.Ok -> Ok
         SigState.Warn -> Warn
@@ -136,25 +132,21 @@ private fun SigChip(meta: Pair<SigState, String>, icon: ImageVector? = null, lab
         SigState.Off -> Muted
     }
     Box(
-        modifier = Modifier
+        modifier = Mod
             .clip(RoundedCornerShape(8.dp))
             .background(Panel)
             .border(1.dp, Border, RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = meta.second, tint = color, modifier = Modifier.size(18.dp))
-        } else {
-            Text(label ?: "", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
+        Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun FaultBanner(text: String) {
     Column(
-        modifier = Modifier
+        modifier = Mod
             .fillMaxWidth()
             .background(Fault.copy(alpha = 0.18f))
             .padding(12.dp),
@@ -177,14 +169,14 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
         RegMode.Water -> "Nastavení teploty vody"
     }
     Column(
-        modifier = Modifier
+        modifier = Mod
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, color = titleColor, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier = Modifier.height(12.dp))
+        Spacer(Mod.height(12.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -198,7 +190,12 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
                         fontSize = 56.sp,
                         fontWeight = FontWeight.Light,
                     )
-                    Text(" °C", color = Muted, fontSize = 20.sp, modifier = Modifier.padding(bottom = 10.dp))
+                    Text(
+                        " °C",
+                        color = Muted,
+                        fontSize = 20.sp,
+                        modifier = Mod.padding(bottom = 10.dp),
+                    )
                 }
                 if (state.regMode == RegMode.Equitherm && state.mqttConnected && state.eqOffset != null) {
                     Text("Korekce ${formatOffset(state.eqOffset)} °C", color = Ekv, fontSize = 13.sp)
@@ -206,33 +203,37 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
             }
             RoundBtn("+") { vm.adjustSetpoint(1) }
         }
-        Spacer(Modifier = Modifier.height(16.dp))
+        Spacer(Mod.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModeChip("Pokoj", state.regMode == RegMode.Room, Room) { vm.setRegMode(RegMode.Room) }
-            ModeChip("Ekviterm", state.regMode == RegMode.Equitherm, Ekv) { vm.setRegMode(RegMode.Equitherm) }
+            ModeChip("Ekviterm", state.regMode == RegMode.Equitherm, Ekv) {
+                vm.setRegMode(RegMode.Equitherm)
+            }
             ModeChip("Ruční", state.regMode == RegMode.Water, Water) { vm.setRegMode(RegMode.Water) }
         }
-        Spacer(Modifier = Modifier.height(20.dp))
+        Spacer(Mod.height(20.dp))
         TempGrid(state)
-        Spacer(Modifier = Modifier.height(16.dp))
+        Spacer(Mod.height(16.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Mod.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PowerBtn(
                 label = "START",
                 active = state.power,
                 color = Ok,
-                modifier = Modifier.weight(1f),
-            ) { vm.setPower(true) }
+                mod = Mod.weight(1f),
+                onClick = { vm.setPower(true) },
+            )
             PowerBtn(
                 label = "STOP",
                 active = !state.power && state.mqttConnected,
                 color = Fault,
-                modifier = Modifier.weight(1f),
-            ) { vm.setPower(false) }
+                mod = Mod.weight(1f),
+                onClick = { vm.setPower(false) },
+            )
         }
-        Spacer(Modifier = Modifier.height(18.dp))
+        Spacer(Mod.height(18.dp))
         StatusRow(state)
     }
 }
@@ -240,7 +241,7 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
 @Composable
 private fun RoundBtn(label: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier
+        modifier = Mod
             .size(56.dp)
             .clip(CircleShape)
             .background(Panel)
@@ -261,7 +262,7 @@ private fun ModeChip(label: String, active: Boolean, accent: Color, onClick: () 
         text = label,
         color = fg,
         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-        modifier = Modifier
+        modifier = Mod
             .clip(RoundedCornerShape(20.dp))
             .background(bg)
             .border(1.dp, border, RoundedCornerShape(20.dp))
@@ -275,20 +276,43 @@ private fun TempGrid(state: AppUiState) {
     val live = state.mqttConnected
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TempCard("Vnitřní teplota", formatTemp(if (live) state.temps.room else null, 1), Modifier.weight(1f))
-            TempCard("Venkovní teplota", formatTemp(if (live) state.temps.outdoor else null, 1), Modifier.weight(1f), Water)
+            TempCard(
+                "Vnitřní teplota",
+                formatTemp(if (live) state.temps.room else null, 1),
+                Mod.weight(1f),
+            )
+            TempCard(
+                "Venkovní teplota",
+                formatTemp(if (live) state.temps.outdoor else null, 1),
+                Mod.weight(1f),
+                Water,
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TempCard("Teplota na vstupu", formatTemp(if (live) state.temps.inlet else null, 0), Modifier.weight(1f))
-            TempCard("Teplota na výstupu", formatTemp(if (live) state.temps.outlet else null, 0), Modifier.weight(1f), Room)
+            TempCard(
+                "Teplota na vstupu",
+                formatTemp(if (live) state.temps.inlet else null, 0),
+                Mod.weight(1f),
+            )
+            TempCard(
+                "Teplota na výstupu",
+                formatTemp(if (live) state.temps.outlet else null, 0),
+                Mod.weight(1f),
+                Room,
+            )
         }
     }
 }
 
 @Composable
-private fun TempCard(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = TextPrimary) {
+private fun TempCard(
+    label: String,
+    value: String,
+    mod: Mod = Mod,
+    valueColor: Color = TextPrimary,
+) {
     Column(
-        modifier = modifier
+        modifier = mod
             .clip(RoundedCornerShape(12.dp))
             .background(Panel)
             .border(1.dp, Border, RoundedCornerShape(12.dp))
@@ -304,12 +328,12 @@ private fun PowerBtn(
     label: String,
     active: Boolean,
     color: Color,
-    modifier: Modifier = Modifier,
+    mod: Mod = Mod,
     onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = mod.height(48.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (active) color.copy(alpha = 0.25f) else Panel,
             contentColor = if (active) color else TextPrimary,
@@ -323,19 +347,19 @@ private fun PowerBtn(
 @Composable
 private fun StatusRow(state: AppUiState) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Mod.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        StatText("⏻", state.power, "Provoz TČ")
-        StatText("🔄", state.pump, "Čerpadlo")
-        StatText("🌀", state.compressor, "Kompresor")
-        StatText("❄", state.defrost, "Odmrazování", warn = true)
-        StatText("⚡", state.elec, "El. topení", warn = true)
+        StatText("⏻", state.power, warn = false)
+        StatText("🔄", state.pump, warn = false)
+        StatText("🌀", state.compressor, warn = false)
+        StatText("❄", state.defrost, warn = true)
+        StatText("⚡", state.elec, warn = true)
     }
 }
 
 @Composable
-private fun StatText(glyph: String, on: Boolean, label: String, warn: Boolean = false) {
+private fun StatText(glyph: String, on: Boolean, warn: Boolean) {
     val color = when {
         on && warn -> Warn
         on -> Ok
@@ -356,70 +380,75 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
         cursorColor = Room,
     )
     Column(
-        modifier = Modifier
+        modifier = Mod
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("Připojení MQTT", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier = Modifier.height(6.dp))
+        Text(
+            "Připojení MQTT",
+            color = TextPrimary,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Mod.height(6.dp))
         Text(
             "Aplikace slouží jen k ovládání. Časový plán a regulátor PID zůstávají na Tab5.",
             color = Muted,
             fontSize = 13.sp,
         )
-        Spacer(Modifier = Modifier.height(16.dp))
+        Spacer(Mod.height(16.dp))
         OutlinedTextField(
             value = state.brokerUrl,
             onValueChange = { vm.updateDraft(host = it) },
             label = { Text("Broker (WSS)") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Mod.fillMaxWidth(),
             singleLine = true,
             colors = fieldColors,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
-        Spacer(Modifier = Modifier.height(10.dp))
+        Spacer(Mod.height(10.dp))
         OutlinedTextField(
             value = state.brokerUser,
             onValueChange = { vm.updateDraft(user = it) },
             label = { Text("Uživatel") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Mod.fillMaxWidth(),
             singleLine = true,
             colors = fieldColors,
         )
-        Spacer(Modifier = Modifier.height(10.dp))
+        Spacer(Mod.height(10.dp))
         OutlinedTextField(
             value = state.brokerPassword,
             onValueChange = { vm.updateDraft(password = it) },
             label = { Text("Heslo") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Mod.fillMaxWidth(),
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             colors = fieldColors,
         )
-        Spacer(Modifier = Modifier.height(10.dp))
+        Spacer(Mod.height(10.dp))
         OutlinedTextField(
             value = state.topicPrefix,
             onValueChange = { vm.updateDraft(prefix = it) },
             label = { Text("Topic prefix") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Mod.fillMaxWidth(),
             singleLine = true,
             colors = fieldColors,
         )
-        Spacer(Modifier = Modifier.height(16.dp))
+        Spacer(Mod.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = vm::connect,
                 enabled = !state.sessionActive,
-                modifier = Modifier.weight(1f),
+                modifier = Mod.weight(1f),
             ) { Text("Připojit") }
             OutlinedButton(
                 onClick = vm::disconnect,
                 enabled = state.sessionActive,
-                modifier = Modifier.weight(1f),
+                modifier = Mod.weight(1f),
             ) { Text("Odpojit") }
         }
-        Spacer(Modifier = Modifier.height(12.dp))
+        Spacer(Mod.height(12.dp))
         val statusColor = when {
             state.mqttStatus == MqttLinkStatus.Error -> Fault
             state.mqttConnected -> Ok
@@ -433,7 +462,7 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
 private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
     HorizontalDivider(color = Border)
     Row(
-        modifier = Modifier
+        modifier = Mod
             .fillMaxWidth()
             .background(Panel)
             .padding(vertical = 8.dp),
@@ -449,7 +478,7 @@ private fun NavItem(label: String, icon: ImageVector, active: Boolean, onClick: 
     val color = if (active) Room else Muted
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
+        modifier = Mod
             .width(120.dp)
             .clickable(onClick = onClick)
             .padding(6.dp),

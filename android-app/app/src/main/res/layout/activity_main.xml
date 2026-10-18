@@ -1,66 +1,93 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121214"
+    android:background="@color/bg"
     android:orientation="vertical">
 
     <LinearLayout
+        android:id="@+id/topbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="12dp"
-        android:paddingVertical="10dp">
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp">
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:letterSpacing="0.02"
             android:text="Windmi"
-            android:textColor="#E0E0E6"
-            android:textSize="16sp"
+            android:textColor="@color/text"
+            android:textSize="15sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/sigMqtt"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="#1A1A1F"
+            android:layout_height="32dp"
+            android:background="@drawable/bg_sig"
+            android:gravity="center"
+            android:minWidth="40dp"
             android:paddingHorizontal="8dp"
-            android:paddingVertical="4dp"
             android:text="MQTT"
-            android:textColor="#8E8E93"
-            android:textSize="12sp"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/sigMb"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="32dp"
             android:layout_marginStart="8dp"
-            android:background="#1A1A1F"
+            android:background="@drawable/bg_sig"
+            android:gravity="center"
+            android:minWidth="40dp"
             android:paddingHorizontal="8dp"
-            android:paddingVertical="4dp"
             android:text="MB"
-            android:textColor="#8E8E93"
-            android:textSize="12sp"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
             android:textStyle="bold" />
     </LinearLayout>
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="#24242B" />
+        android:background="@color/border" />
 
-    <TextView
+    <LinearLayout
         android:id="@+id/faultBanner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#33FF453A"
-        android:padding="12dp"
-        android:textColor="#FFD60A"
-        android:visibility="gone" />
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_fault"
+        android:orientation="vertical"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.04"
+            android:text="PORUCHOVÉ HLÁŠENÍ"
+            android:textAllCaps="true"
+            android:textColor="@color/fault"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/faultText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/fault_text"
+            android:textSize="13sp" />
+    </LinearLayout>
 
     <FrameLayout
         android:id="@+id/content"
@@ -71,35 +98,67 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="#24242B" />
+        android:background="@color/border" />
 
     <LinearLayout
+        android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#1A1A1F"
-        android:orientation="horizontal"
-        android:paddingVertical="8dp">
+        android:layout_height="52dp"
+        android:background="@color/panel"
+        android:orientation="horizontal">
 
-        <TextView
+        <LinearLayout
             android:id="@+id/navHome"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
             android:gravity="center"
-            android:padding="8dp"
-            android:text="Domů"
-            android:textColor="#0A84FF"
-            android:textSize="13sp" />
+            android:orientation="vertical">
 
-        <TextView
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⌂"
+                android:textColor="@color/room"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/navHomeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Domů"
+                android:textColor="@color/room"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/navSettings"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
             android:gravity="center"
-            android:padding="8dp"
-            android:text="Nastavení"
-            android:textColor="#8E8E93"
-            android:textSize="13sp" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⚙"
+                android:textColor="@color/muted"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/navSettingsLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nastavení"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

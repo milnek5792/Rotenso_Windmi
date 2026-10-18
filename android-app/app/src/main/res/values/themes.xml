@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.WindmiCtrl" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="android:statusBarColor">#121214</item>
-        <item name="android:navigationBarColor">#121214</item>
-        <item name="android:windowBackground">#121214</item>
-        <item name="colorPrimary">#0A84FF</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorPrimary">@color/room</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="android:textColorPrimary">#E0E0E6</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorHint">@color/muted</item>
+        <item name="colorControlNormal">@color/border</item>
+        <item name="colorControlActivated">@color/room</item>
     </style>
 </resources>

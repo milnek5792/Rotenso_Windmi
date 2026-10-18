@@ -31,6 +31,8 @@ class WindmiViewModel(
     private var faultPending: Pair<Boolean, String>? = null
     private var flashJob: Job? = null
     private var foregroundConnectJob: Job? = null
+    /** Po prvním načtení z DataStore už nepřepisuj rozepsané pole (Chrome hesla atd.). */
+    private var settingsSeeded = false
 
     private val appLifecycle = object : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
@@ -49,6 +51,8 @@ class WindmiViewModel(
         ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycle)
         viewModelScope.launch {
             settingsStore.settings.collect { s ->
+                if (settingsSeeded) return@collect
+                settingsSeeded = true
                 _ui.update {
                     it.copy(
                         brokerUrl = s.host,
@@ -67,16 +71,19 @@ class WindmiViewModel(
         }
     }
 
-    /** Stejná cesta jako tlačítko Připojit, jen bere uložené nastavení. */
+    /** Auto-connect z úložiště — nezasahuje do rozepsaného draftu v UI. */
     private suspend fun connectFromStoredSettings(retry: Boolean) {
         val s = runCatching { settingsStore.settings.first() }.getOrNull() ?: return
-        _ui.update {
-            it.copy(
-                brokerUrl = s.host,
-                brokerUser = s.user,
-                brokerPassword = s.password,
-                topicPrefix = s.prefix,
-            )
+        if (!settingsSeeded) {
+            settingsSeeded = true
+            _ui.update {
+                it.copy(
+                    brokerUrl = s.host,
+                    brokerUser = s.user,
+                    brokerPassword = s.password,
+                    topicPrefix = s.prefix,
+                )
+            }
         }
         if (!s.autoConnect) return
         if (s.host.isBlank() || s.user.isBlank() || s.password.isBlank()) return

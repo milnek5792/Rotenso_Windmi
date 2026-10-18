@@ -3,7 +3,9 @@ package cz.windmi.control
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
@@ -119,7 +121,16 @@ class MainActivity : AppCompatActivity() {
         binding.pageSettings.root.findViewById<View>(R.id.btnDisconnect).setOnClickListener {
             viewModel.disconnect()
         }
+        val host = settings().findViewById<EditText>(R.id.cfgHost)
+        val user = settings().findViewById<EditText>(R.id.cfgUser)
         val pass = settings().findViewById<EditText>(R.id.cfgPass)
+        val prefix = settings().findViewById<EditText>(R.id.cfgPrefix)
+        // Draft hned do ViewModel — při odskoku do Chrome hesel pole ztratí focus
+        // a render by jinak přepsal prázdnými uloženými hodnotami.
+        host.addTextChangedListener(draftWatcher { viewModel.updateDraft(host = it) })
+        user.addTextChangedListener(draftWatcher { viewModel.updateDraft(user = it) })
+        pass.addTextChangedListener(draftWatcher { viewModel.updateDraft(password = it) })
+        prefix.addTextChangedListener(draftWatcher { viewModel.updateDraft(prefix = it) })
         val toggle = settings().findViewById<TextView>(R.id.btnTogglePass)
         toggle.setOnClickListener {
             val visible = pass.transformationMethod == null
@@ -136,6 +147,21 @@ class MainActivity : AppCompatActivity() {
             pass.setSelection(pass.text?.length ?: 0)
         }
         toggle.alpha = 0.55f
+    }
+
+    private fun draftWatcher(onChange: (String) -> Unit): TextWatcher {
+        return object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                onChange(s?.toString().orEmpty())
+            }
+        }
+    }
+
+    override fun onPause() {
+        syncDraftFromFields()
+        super.onPause()
     }
 
     private fun home(): View = binding.pageHome.root

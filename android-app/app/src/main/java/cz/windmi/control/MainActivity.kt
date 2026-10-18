@@ -2,10 +2,8 @@ package cz.windmi.control
 
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -32,8 +30,6 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private lateinit var home: View
-    private lateinit var settings: View
 
     private val viewModel: WindmiViewModel by viewModels {
         val app = application as WindmiApplication
@@ -55,17 +51,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         applySystemInsets()
 
-        val inflater = LayoutInflater.from(this)
-        val matchParent = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        )
-        home = inflater.inflate(R.layout.view_home, binding.content, false)
-        settings = inflater.inflate(R.layout.view_settings, binding.content, false)
-        binding.content.addView(home, matchParent)
-        binding.content.addView(settings, matchParent)
-        settings.isVisible = false
-
         bindHome()
         bindSettings()
         bindNav()
@@ -81,6 +66,7 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             binding.topbar.updatePadding(top = bars.top)
+            // Padding on the nav container, not shrinking the 56dp tab hit targets.
             binding.bottomNav.updatePadding(bottom = bars.bottom)
             insets
         }
@@ -97,55 +83,75 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindNav() {
-        binding.navHome.setOnClickListener { viewModel.selectTab(0) }
-        binding.navSettings.setOnClickListener { viewModel.selectTab(1) }
+        val goHome = View.OnClickListener { viewModel.selectTab(0) }
+        val goSettings = View.OnClickListener { viewModel.selectTab(1) }
+        binding.navHome.setOnClickListener(goHome)
+        binding.navHomeIcon.setOnClickListener(goHome)
+        binding.navHomeLabel.setOnClickListener(goHome)
+        binding.navSettings.setOnClickListener(goSettings)
+        binding.navSettingsIcon.setOnClickListener(goSettings)
+        binding.navSettingsLabel.setOnClickListener(goSettings)
     }
 
     private fun bindHome() {
-        home.findViewById<View>(R.id.btnMinus).setOnClickListener { viewModel.adjustSetpoint(-1) }
-        home.findViewById<View>(R.id.btnPlus).setOnClickListener { viewModel.adjustSetpoint(1) }
-        home.findViewById<View>(R.id.modeRoom).setOnClickListener { viewModel.setRegMode(RegMode.Room) }
-        home.findViewById<View>(R.id.modeEkv).setOnClickListener { viewModel.setRegMode(RegMode.Equitherm) }
-        home.findViewById<View>(R.id.modeWater).setOnClickListener { viewModel.setRegMode(RegMode.Water) }
-        home.findViewById<View>(R.id.btnStart).setOnClickListener { viewModel.setPower(true) }
-        home.findViewById<View>(R.id.btnStop).setOnClickListener { viewModel.setPower(false) }
+        binding.pageHome.root.findViewById<View>(R.id.btnMinus).setOnClickListener {
+            viewModel.adjustSetpoint(-1)
+        }
+        binding.pageHome.root.findViewById<View>(R.id.btnPlus).setOnClickListener {
+            viewModel.adjustSetpoint(1)
+        }
+        binding.pageHome.root.findViewById<View>(R.id.modeRoom).setOnClickListener {
+            viewModel.setRegMode(RegMode.Room)
+        }
+        binding.pageHome.root.findViewById<View>(R.id.modeEkv).setOnClickListener {
+            viewModel.setRegMode(RegMode.Equitherm)
+        }
+        binding.pageHome.root.findViewById<View>(R.id.modeWater).setOnClickListener {
+            viewModel.setRegMode(RegMode.Water)
+        }
+        binding.pageHome.root.findViewById<View>(R.id.btnStart).setOnClickListener {
+            viewModel.setPower(true)
+        }
+        binding.pageHome.root.findViewById<View>(R.id.btnStop).setOnClickListener {
+            viewModel.setPower(false)
+        }
     }
 
     private fun bindSettings() {
-        settings.findViewById<View>(R.id.btnConnect).setOnClickListener {
+        binding.pageSettings.root.findViewById<View>(R.id.btnConnect).setOnClickListener {
             syncDraftFromFields()
             viewModel.connect()
         }
-        settings.findViewById<View>(R.id.btnDisconnect).setOnClickListener {
+        binding.pageSettings.root.findViewById<View>(R.id.btnDisconnect).setOnClickListener {
             viewModel.disconnect()
         }
     }
 
+    private fun home(): View = binding.pageHome.root
+    private fun settings(): View = binding.pageSettings.root
+
     private fun syncDraftFromFields() {
         viewModel.updateDraft(
-            host = settings.findViewById<EditText>(R.id.cfgHost).text?.toString().orEmpty(),
-            user = settings.findViewById<EditText>(R.id.cfgUser).text?.toString().orEmpty(),
-            password = settings.findViewById<EditText>(R.id.cfgPass).text?.toString().orEmpty(),
-            prefix = settings.findViewById<EditText>(R.id.cfgPrefix).text?.toString().orEmpty(),
+            host = settings().findViewById<EditText>(R.id.cfgHost).text?.toString().orEmpty(),
+            user = settings().findViewById<EditText>(R.id.cfgUser).text?.toString().orEmpty(),
+            password = settings().findViewById<EditText>(R.id.cfgPass).text?.toString().orEmpty(),
+            prefix = settings().findViewById<EditText>(R.id.cfgPrefix).text?.toString().orEmpty(),
         )
     }
 
     private fun render(state: AppUiState) {
-        val showHome = state.selectedTab == 0
-        home.isVisible = showHome
-        settings.isVisible = !showHome
-        if (showHome) {
-            home.bringToFront()
-        } else {
-            settings.bringToFront()
+        val tab = state.selectedTab.coerceIn(0, 1)
+        if (binding.pager.displayedChild != tab) {
+            binding.pager.displayedChild = tab
         }
 
+        val showHome = tab == 0
         val active = ContextCompat.getColor(this, R.color.room)
         val inactive = ContextCompat.getColor(this, R.color.muted)
+        binding.navHomeIcon.setTextColor(if (showHome) active else inactive)
         binding.navHomeLabel.setTextColor(if (showHome) active else inactive)
+        binding.navSettingsIcon.setTextColor(if (!showHome) active else inactive)
         binding.navSettingsLabel.setTextColor(if (!showHome) active else inactive)
-        (binding.navHome.getChildAt(0) as TextView).setTextColor(if (showHome) active else inactive)
-        (binding.navSettings.getChildAt(0) as TextView).setTextColor(if (!showHome) active else inactive)
 
         paintSig(binding.sigMqtt, state.flashMessage ?: "MQTT", state.mqttSig().first)
         paintSig(binding.sigMb, "MB", state.linSig().first)
@@ -154,8 +160,8 @@ class MainActivity : AppCompatActivity() {
         binding.faultBanner.isVisible = showFault
         binding.faultText.text = state.faultText
 
-        val title = home.findViewById<TextView>(R.id.spTitle)
-        val hint = home.findViewById<TextView>(R.id.spHint)
+        val title = home().findViewById<TextView>(R.id.spTitle)
+        val hint = home().findViewById<TextView>(R.id.spHint)
         when (state.regMode) {
             RegMode.Room -> {
                 title.text = "Nastavení pokojové teploty"
@@ -174,47 +180,47 @@ class MainActivity : AppCompatActivity() {
                 hint.isVisible = false
             }
         }
-        home.findViewById<TextView>(R.id.spValue).text = state.displaySetpoint()
+        home().findViewById<TextView>(R.id.spValue).text = state.displaySetpoint()
         paintModes(state.regMode)
 
         val live = state.mqttConnected
-        home.findViewById<TextView>(R.id.tempRoom).text =
+        home().findViewById<TextView>(R.id.tempRoom).text =
             formatTemp(if (live) state.temps.room else null, 1)
-        home.findViewById<TextView>(R.id.tempOutdoor).text =
+        home().findViewById<TextView>(R.id.tempOutdoor).text =
             formatTemp(if (live) state.temps.outdoor else null, 1)
-        home.findViewById<TextView>(R.id.tempInlet).text =
+        home().findViewById<TextView>(R.id.tempInlet).text =
             formatTemp(if (live) state.temps.inlet else null, 0)
-        home.findViewById<TextView>(R.id.tempOutlet).text =
+        home().findViewById<TextView>(R.id.tempOutlet).text =
             formatTemp(if (live) state.temps.outlet else null, 0)
 
-        home.findViewById<View>(R.id.btnStart).setBackgroundResource(
+        home().findViewById<View>(R.id.btnStart).setBackgroundResource(
             if (state.power) R.drawable.bg_btn_start_on else R.drawable.bg_btn_start,
         )
-        home.findViewById<View>(R.id.btnStop).setBackgroundResource(
+        home().findViewById<View>(R.id.btnStop).setBackgroundResource(
             if (!state.power && state.mqttConnected) R.drawable.bg_btn_stop_on else R.drawable.bg_btn_stop,
         )
 
-        paintStat(home.findViewById(R.id.statPower), state.power, warn = false)
-        paintStat(home.findViewById(R.id.statPump), state.pump, warn = false)
-        paintStat(home.findViewById(R.id.statCompressor), state.compressor, warn = false)
-        paintStat(home.findViewById(R.id.statDefrost), state.defrost, warn = true)
-        paintStat(home.findViewById(R.id.statElec), state.elec, warn = true)
+        paintStat(home().findViewById(R.id.statPower), state.power, warn = false)
+        paintStat(home().findViewById(R.id.statPump), state.pump, warn = false)
+        paintStat(home().findViewById(R.id.statCompressor), state.compressor, warn = false)
+        paintStat(home().findViewById(R.id.statDefrost), state.defrost, warn = true)
+        paintStat(home().findViewById(R.id.statElec), state.elec, warn = true)
 
-        val host = settings.findViewById<EditText>(R.id.cfgHost)
-        val user = settings.findViewById<EditText>(R.id.cfgUser)
-        val pass = settings.findViewById<EditText>(R.id.cfgPass)
-        val prefix = settings.findViewById<EditText>(R.id.cfgPrefix)
+        val host = settings().findViewById<EditText>(R.id.cfgHost)
+        val user = settings().findViewById<EditText>(R.id.cfgUser)
+        val pass = settings().findViewById<EditText>(R.id.cfgPass)
+        val prefix = settings().findViewById<EditText>(R.id.cfgPrefix)
         if (!host.isFocused && host.text?.toString() != state.brokerUrl) host.setText(state.brokerUrl)
         if (!user.isFocused && user.text?.toString() != state.brokerUser) user.setText(state.brokerUser)
         if (!pass.isFocused && pass.text?.toString() != state.brokerPassword) pass.setText(state.brokerPassword)
         if (!prefix.isFocused && prefix.text?.toString() != state.topicPrefix) prefix.setText(state.topicPrefix)
 
-        settings.findViewById<View>(R.id.btnConnect).isEnabled = !state.sessionActive
-        settings.findViewById<View>(R.id.btnConnect).alpha = if (state.sessionActive) 0.45f else 1f
-        settings.findViewById<View>(R.id.btnDisconnect).isEnabled = state.sessionActive
-        settings.findViewById<View>(R.id.btnDisconnect).alpha = if (state.sessionActive) 1f else 0.45f
+        settings().findViewById<View>(R.id.btnConnect).isEnabled = !state.sessionActive
+        settings().findViewById<View>(R.id.btnConnect).alpha = if (state.sessionActive) 0.45f else 1f
+        settings().findViewById<View>(R.id.btnDisconnect).isEnabled = state.sessionActive
+        settings().findViewById<View>(R.id.btnDisconnect).alpha = if (state.sessionActive) 1f else 0.45f
 
-        val status = settings.findViewById<TextView>(R.id.cfgStatus)
+        val status = settings().findViewById<TextView>(R.id.cfgStatus)
         status.text = state.settingsStatus
         status.setTextColor(
             ContextCompat.getColor(
@@ -229,9 +235,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun paintModes(mode: RegMode) {
-        val room = home.findViewById<TextView>(R.id.modeRoom)
-        val ekv = home.findViewById<TextView>(R.id.modeEkv)
-        val water = home.findViewById<TextView>(R.id.modeWater)
+        val room = home().findViewById<TextView>(R.id.modeRoom)
+        val ekv = home().findViewById<TextView>(R.id.modeEkv)
+        val water = home().findViewById<TextView>(R.id.modeWater)
         room.setBackgroundResource(if (mode == RegMode.Room) R.drawable.bg_chip_room else R.drawable.bg_chip)
         ekv.setBackgroundResource(if (mode == RegMode.Equitherm) R.drawable.bg_chip_ekv else R.drawable.bg_chip)
         water.setBackgroundResource(if (mode == RegMode.Water) R.drawable.bg_chip_water else R.drawable.bg_chip)

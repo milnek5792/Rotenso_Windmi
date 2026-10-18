@@ -63,6 +63,10 @@ jobs:
             grep -E "e: |error:|FAILED|What went wrong|Execution failed|\.kt:[0-9]+" android-app/build.log | tail -n 80 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # Surface errors as annotations (readable without downloading private logs).
+          grep -E "e: |error:|What went wrong|Execution failed|\.kt:[0-9]+" android-app/build.log | tail -n 40 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
 
       - name: Rename APK
         run: |

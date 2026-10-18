@@ -44,11 +44,20 @@ class MqttRepository {
     private var watchFuture: ScheduledFuture<*>? = null
     private var hydrateFuture: ScheduledFuture<*>? = null
     private val lastStatus = AtomicReference(MqttLinkStatus.Idle)
+    private val lastError = AtomicReference("")
     private val connectingSinceMs = AtomicLong(0)
 
     fun setListener(listener: ((MqttEvent) -> Unit)?) {
         listeners.set(listener)
+        // Dožene stav, když se UI otevře až po Connecting/Connected.
+        if (listener != null) {
+            val status = lastStatus.get()
+            listener(MqttEvent.Status(status, lastError.get()))
+            listener(MqttEvent.Connection(connected = isConnected(), reconnecting = status == MqttLinkStatus.Connecting))
+        }
     }
+
+    fun currentStatus(): MqttLinkStatus = lastStatus.get()
 
     fun isConnected(): Boolean = clientRef.get()?.state?.isConnected == true
 
@@ -335,6 +344,7 @@ class MqttRepository {
     private fun emit(event: MqttEvent) {
         if (event is MqttEvent.Status) {
             val prev = lastStatus.getAndSet(event.status)
+            lastError.set(event.error)
             when (event.status) {
                 MqttLinkStatus.Connecting ->
                     if (prev != MqttLinkStatus.Connecting || connectingSinceMs.get() == 0L) {

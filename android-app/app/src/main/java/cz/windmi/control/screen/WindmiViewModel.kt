@@ -1,5 +1,8 @@
 package cz.windmi.control.screen
 
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cz.windmi.control.data.MqttSettings
@@ -12,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -26,23 +30,23 @@ class WindmiViewModel(
     private var faultJob: Job? = null
     private var faultPending: Pair<Boolean, String>? = null
     private var flashJob: Job? = null
+    private var foregroundConnectJob: Job? = null
+
+    private val appLifecycle = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            // Stejné jako tlačítko Připojit — až je UI nahoře (ne dřív v Application).
+            foregroundConnectJob?.cancel()
+            foregroundConnectJob = viewModelScope.launch {
+                connectFromStoredSettings(retry = true)
+            }
+        }
+    }
 
     init {
-        // Session řídí MqttSessionController (Application). Tady jen UI + ruční Připojit/Odpojit.
         mqtt.setListener { event ->
             viewModelScope.launch { onMqttEvent(event) }
         }
-        // Obnov UI stav podle aktuálního klienta (přežití Activity / návrat do appky).
-        refreshSession()
-        if (mqtt.isConnected()) {
-            _ui.update {
-                it.copy(
-                    mqttStatus = MqttLinkStatus.Connected,
-                    mqttConnected = true,
-                    sessionActive = true,
-                )
-            }
-        }
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycle)
         viewModelScope.launch {
             settingsStore.settings.collect { s ->
                 _ui.update {
@@ -60,6 +64,31 @@ class WindmiViewModel(
                 delay(5_000)
                 checkTeleStale()
             }
+        }
+    }
+
+    /** Stejná cesta jako tlačítko Připojit, jen bere uložené nastavení. */
+    private suspend fun connectFromStoredSettings(retry: Boolean) {
+        val s = runCatching { settingsStore.settings.first() }.getOrNull() ?: return
+        _ui.update {
+            it.copy(
+                brokerUrl = s.host,
+                brokerUser = s.user,
+                brokerPassword = s.password,
+                topicPrefix = s.prefix,
+            )
+        }
+        if (!s.autoConnect) return
+        if (s.host.isBlank() || s.user.isBlank() || s.password.isBlank()) return
+
+        mqtt.connect(s)
+        refreshSession()
+        if (!retry) return
+
+        delay(3_500)
+        if (!mqtt.isConnected() && s.autoConnect) {
+            mqtt.connect(s)
+            refreshSession()
         }
     }
 
@@ -386,7 +415,7 @@ class WindmiViewModel(
     }
 
     override fun onCleared() {
-        // Neodpojovat MQTT — session drží Application. Jen uvolni UI listener.
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycle)
         mqtt.setListener(null)
         super.onCleared()
     }

@@ -11,8 +11,8 @@ android {
         applicationId = "cz.windmi.control"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.1.1"
+        versionCode = 5
+        versionName = "2.1.2"
     }
 
     buildTypes {

@@ -1,9 +1,11 @@
 package cz.windmi.control
 
+import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -13,6 +15,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
+import androidx.core.widget.ImageViewCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -294,7 +297,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun paintStat(view: TextView, on: Boolean, warn: Boolean) {
+    private fun paintStat(view: View, on: Boolean, warn: Boolean) {
         view.setBackgroundResource(
             when {
                 on && warn -> R.drawable.bg_stat_warn_on
@@ -303,6 +306,17 @@ class MainActivity : AppCompatActivity() {
             },
         )
         view.alpha = if (on) 1f else 0.45f
+        if (view is ImageView) {
+            val color = ContextCompat.getColor(
+                this,
+                when {
+                    on && warn -> R.color.warn
+                    on -> R.color.ok
+                    else -> R.color.muted
+                },
+            )
+            ImageViewCompat.setImageTintList(view, ColorStateList.valueOf(color))
+        }
     }
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density

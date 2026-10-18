@@ -19,7 +19,9 @@ class SettingsStore(private val context: Context) {
 
     val settings: Flow<MqttSettings> = context.dataStore.data.map { prefs ->
         MqttSettings(
-            host = prefs[keyHost] ?: MqttSettings.DEFAULT_WSS,
+            host = MqttSettings.normalizeBrokerUrl(
+                prefs[keyHost] ?: MqttSettings.DEFAULT_BROKER,
+            ),
             user = prefs[keyUser] ?: "",
             password = prefs[keyPassword] ?: "",
             prefix = prefs[keyPrefix] ?: "windmi",
@@ -29,7 +31,7 @@ class SettingsStore(private val context: Context) {
 
     suspend fun save(settings: MqttSettings) {
         context.dataStore.edit { prefs ->
-            prefs[keyHost] = settings.host
+            prefs[keyHost] = MqttSettings.normalizeBrokerUrl(settings.host)
             prefs[keyUser] = settings.user
             prefs[keyPassword] = settings.password
             prefs[keyPrefix] = normalizePrefix(settings.prefix)

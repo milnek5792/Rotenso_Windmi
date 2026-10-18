@@ -75,10 +75,10 @@ class WindmiViewModel(
 
     fun connect() {
         val state = _ui.value
-        val host = state.brokerUrl.trim()
+        val host = MqttSettings.normalizeBrokerUrl(state.brokerUrl)
         if (host.isEmpty()) {
             _ui.update {
-                it.copy(mqttStatus = MqttLinkStatus.Error, mqttError = "Zadej URL brokeru (WSS)")
+                it.copy(mqttStatus = MqttLinkStatus.Error, mqttError = "Zadej adresu brokeru")
             }
             return
         }

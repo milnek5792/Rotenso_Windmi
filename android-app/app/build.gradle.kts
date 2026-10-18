@@ -11,8 +11,8 @@ android {
         applicationId = "cz.windmi.control"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "2.1.3"
+        versionCode = 7
+        versionName = "2.1.4"
     }
 
     buildTypes {
@@ -64,4 +64,6 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.hivemq:hivemq-mqtt-client:1.3.3")
+    // Volitelné WSS (kdyby někdo vložil PWA URL dřív, než se znormalizuje na mqtts).
+    implementation("com.hivemq:hivemq-mqtt-client-websocket:1.3.3")
 }

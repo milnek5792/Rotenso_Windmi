@@ -61,9 +61,9 @@ class MqttRepository {
         prefixRef.set(prefix)
         emit(MqttEvent.Status(MqttLinkStatus.Connecting))
 
-        val endpoint = parseEndpoint(settings.host)
+        val endpoint = parseEndpoint(MqttSettings.normalizeBrokerUrl(settings.host))
         if (endpoint == null) {
-            emit(MqttEvent.Status(MqttLinkStatus.Error, "Neplatná URL brokeru (WSS)"))
+            emit(MqttEvent.Status(MqttLinkStatus.Error, "Neplatná adresa brokeru"))
             return
         }
 
@@ -317,11 +317,11 @@ class MqttRepository {
             val scheme = (uri.scheme ?: "").lowercase()
             val host = uri.host ?: return null
             val websocket = scheme == "ws" || scheme == "wss"
-            val ssl = scheme == "wss" || scheme == "mqtts" || scheme == "ssl"
+            val ssl = scheme == "wss" || scheme == "mqtts" || scheme == "ssl" || scheme == "mqtt+ssl"
             val defaultPort = when (scheme) {
                 "wss" -> 443
                 "ws" -> 80
-                "mqtts", "ssl" -> 8883
+                "mqtts", "ssl", "mqtt+ssl" -> 8883
                 else -> 1883
             }
             val port = if (uri.port > 0) uri.port else defaultPort

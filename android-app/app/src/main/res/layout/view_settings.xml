@@ -28,14 +28,14 @@
             android:layout_marginTop="4dp"
             android:layout_marginBottom="14dp"
             android:lineSpacingMultiplier="1.3"
-            android:text="Aplikace slouží jen k ovládání. Časový plán a regulátor PID zůstávají na Tab5."
+            android:text="Telefon se připojuje přímo na MQTTS (port 8883), stejně jako Tab5. Adresa wss://…/mqtt je jen pro prohlížeč (PWA)."
             android:textColor="@color/muted"
             android:textSize="13sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Broker (WSS)"
+            android:text="Broker (MQTTS)"
             android:textColor="@color/muted"
             android:textSize="12sp" />
 
@@ -45,7 +45,7 @@
             android:layout_height="48dp"
             android:layout_marginTop="4dp"
             android:background="@drawable/bg_field"
-            android:hint="wss://n9e16b3c.ala.eu-central-1.emqxsl.com:8084/mqtt"
+            android:hint="mqtts://n9e16b3c.ala.eu-central-1.emqxsl.com:8883"
             android:inputType="textUri"
             android:paddingHorizontal="12dp"
             android:textColor="@color/text"

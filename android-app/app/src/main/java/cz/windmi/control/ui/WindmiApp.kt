@@ -191,10 +191,10 @@ private fun HomeScreen(state: AppUiState, vm: WindmiViewModel) {
                         fontWeight = FontWeight.Light,
                     )
                     Text(
-                        " °C",
+                        text = " °C",
                         color = Muted,
                         fontSize = 20.sp,
-                        Modifier.padding(bottom = 10.dp),
+                        modifier = Modifier.padding(bottom = 10.dp),
                     )
                 }
                 if (state.regMode == RegMode.Equitherm && state.mqttConnected && state.eqOffset != null) {
@@ -398,8 +398,8 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
         OutlinedTextField(
             value = state.brokerUrl,
             onValueChange = { vm.updateDraft(host = it) },
+            modifier = Modifier.fillMaxWidth(),
             label = { Text("Broker (WSS)") },
-            Modifier.fillMaxWidth(),
             singleLine = true,
             colors = fieldColors,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -408,8 +408,8 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
         OutlinedTextField(
             value = state.brokerUser,
             onValueChange = { vm.updateDraft(user = it) },
+            modifier = Modifier.fillMaxWidth(),
             label = { Text("Uživatel") },
-            Modifier.fillMaxWidth(),
             singleLine = true,
             colors = fieldColors,
         )
@@ -417,8 +417,8 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
         OutlinedTextField(
             value = state.brokerPassword,
             onValueChange = { vm.updateDraft(password = it) },
+            modifier = Modifier.fillMaxWidth(),
             label = { Text("Heslo") },
-            Modifier.fillMaxWidth(),
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             colors = fieldColors,
@@ -427,8 +427,8 @@ private fun SettingsScreen(state: AppUiState, vm: WindmiViewModel) {
         OutlinedTextField(
             value = state.topicPrefix,
             onValueChange = { vm.updateDraft(prefix = it) },
+            modifier = Modifier.fillMaxWidth(),
             label = { Text("Topic prefix") },
-            Modifier.fillMaxWidth(),
             singleLine = true,
             colors = fieldColors,
         )

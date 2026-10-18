@@ -24,7 +24,7 @@ Zdroj: `docs/pwa/` → GitHub Pages (viz PROJECT.md). Po změně JS bump SW cach
 
 ## Android APK (nativní)
 
-Nativní **Kotlin + Jetpack Compose** aplikace v `android-app/` (HiveMQ MQTT přes WSS, stejné topicy jako PWA).
+Nativní **Kotlin** aplikace v `android-app/` (XML UI + HiveMQ MQTT přes WSS, stejné topicy jako PWA).
 
 - Workflow: `.github/workflows/build-apk.yml` → artifact `WindmiCtrl-apk`
 - Spuštění: push do `android-app/**`, **Run workflow**, nebo GitHub Release

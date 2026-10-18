@@ -174,7 +174,7 @@ Po změně JS: bump SW + query string, hard refresh / `reset.html`.
 
 | Položka | Hodnota |
 |---------|---------|
-| Zdroj | `android-app/` (Compose UI + HiveMQ MQTT) |
+| Zdroj | `android-app/` (Kotlin UI + HiveMQ MQTT) |
 | App ID | `cz.windmi.control` |
 | MQTT | stejné `windmi/*` topicy jako PWA (`cmd/*`, `tele/#`, `availability`) |
 | CI | `.github/workflows/build-apk.yml` → artifact `WindmiCtrl-apk` |

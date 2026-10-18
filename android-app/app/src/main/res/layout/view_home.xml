@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/spTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Nastavení pokojové teploty"
+            android:textColor="#0A84FF"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingVertical="12dp">
+
+            <Button
+                android:id="@+id/btnMinus"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:text="-"
+                android:textSize="22sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp">
+
+                <TextView
+                    android:id="@+id/spValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="—"
+                    android:textColor="#E0E0E6"
+                    android:textSize="48sp" />
+
+                <TextView
+                    android:id="@+id/spHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#64D2FF"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnPlus"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:text="+"
+                android:textSize="22sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/modeRoom"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pokoj" />
+
+            <Button
+                android:id="@+id/modeEkv"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Ekviterm" />
+
+            <Button
+                android:id="@+id/modeWater"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Ruční" />
+        </LinearLayout>
+
+        <GridLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:columnCount="2">
+
+            <TextView
+                android:id="@+id/tempRoom"
+                android:layout_width="0dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:background="#1A1A1F"
+                android:padding="12dp"
+                android:text="Vnitřní\n—"
+                android:textColor="#E0E0E6"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tempOutdoor"
+                android:layout_width="0dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:background="#1A1A1F"
+                android:padding="12dp"
+                android:text="Venkovní\n—"
+                android:textColor="#FF9F0A"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tempInlet"
+                android:layout_width="0dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:background="#1A1A1F"
+                android:padding="12dp"
+                android:text="Vstup\n—"
+                android:textColor="#E0E0E6"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tempOutlet"
+                android:layout_width="0dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:background="#1A1A1F"
+                android:padding="12dp"
+                android:text="Výstup\n—"
+                android:textColor="#0A84FF"
+                android:textSize="18sp" />
+        </GridLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnStart"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:text="START" />
+
+            <Button
+                android:id="@+id/btnStop"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:text="STOP" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/statPower"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="⏻"
+                android:textColor="#668E8E93"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/statPump"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="🔄"
+                android:textColor="#668E8E93"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/statCompressor"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="🌀"
+                android:textColor="#668E8E93"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/statDefrost"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="❄"
+                android:textColor="#668E8E93"
+                android:textSize="22sp" />
+
+            <TextView
+                android:id="@+id/statElec"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="⚡"
+                android:textColor="#668E8E93"
+                android:textSize="22sp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

@@ -76,16 +76,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        viewModel.onForeground(true)
-    }
-
-    override fun onPause() {
-        viewModel.onForeground(false)
-        super.onPause()
-    }
-
     private fun bindNav() {
         val goHome = View.OnClickListener { viewModel.selectTab(0) }
         val goSettings = View.OnClickListener { viewModel.selectTab(1) }

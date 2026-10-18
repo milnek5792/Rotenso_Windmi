@@ -67,7 +67,7 @@ data class AppUiState(
         get() = when {
             mqttStatus == MqttLinkStatus.Error -> mqttError
             mqttConnected && tab5Online -> "Připojeno — Tab5 online"
-            mqttConnected -> "Připojeno — čekám na windmi/availability"
+            mqttConnected -> "Připojeno — čekám na Tab5 (availability)"
             mqttStatus == MqttLinkStatus.Connecting -> mqttError.ifBlank { "Připojování…" }
             else -> ""
         }

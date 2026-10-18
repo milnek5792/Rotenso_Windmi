@@ -17,6 +17,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
@@ -33,6 +34,7 @@ class MqttRepository {
     private val clientRef = AtomicReference<Mqtt3AsyncClient?>(null)
     private val prefixRef = AtomicReference("windmi")
     private val userStopped = AtomicBoolean(true)
+    private val sessionGen = AtomicInteger(0)
     private val hydrateUntilMs = AtomicReference(0L)
     private val pending = ConcurrentLinkedQueue<Pair<String, String>>()
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
@@ -55,8 +57,11 @@ class MqttRepository {
     }
 
     fun connect(settings: MqttSettings) {
-        disconnect(sendWatchOff = false, notifyIdle = false)
+        // Zruš předchozí klienta (vč. auto-reconnect), ať nekazí novou session.
+        killClient(sendWatchOff = false)
+        val gen = sessionGen.incrementAndGet()
         userStopped.set(false)
+
         val prefix = SettingsStore.normalizePrefix(settings.prefix)
         prefixRef.set(prefix)
         emit(MqttEvent.Status(MqttLinkStatus.Connecting))
@@ -75,14 +80,22 @@ class MqttRepository {
             .serverPort(endpoint.port)
             .automaticReconnectWithDefaultConfig()
             .addConnectedListener {
+                if (!isCurrent(gen)) return@addConnectedListener
                 beginHydrate()
                 emit(MqttEvent.Status(MqttLinkStatus.Connected))
-                subscribeAll()
-                publishWatch(true)
-                startWatchKeepalive()
-                flushPending()
+                subscribeAll(gen) {
+                    if (!isCurrent(gen) || !isConnected()) return@subscribeAll
+                    publishWatch(true)
+                    startWatchKeepalive()
+                    flushPending()
+                    // Retained availability někdy dorazí až po SUBACK — druhý watch po chvíli.
+                    scheduler.schedule({
+                        if (isCurrent(gen) && isConnected()) publishWatch(true)
+                    }, 1500, TimeUnit.MILLISECONDS)
+                }
             }
             .addDisconnectedListener { ctx ->
+                if (!isCurrent(gen)) return@addDisconnectedListener
                 stopWatchKeepalive()
                 if (userStopped.get()) {
                     if (lastStatus.get() != MqttLinkStatus.Error) {
@@ -121,35 +134,41 @@ class MqttRepository {
 
         connectBuilder.send()
             .whenComplete { _, err ->
-                if (err != null && !userStopped.get()) {
+                if (err != null && isCurrent(gen) && !userStopped.get()) {
                     emit(MqttEvent.Status(MqttLinkStatus.Error, friendlyError(err)))
                 }
             }
     }
 
     fun disconnect(sendWatchOff: Boolean = true, notifyIdle: Boolean = true) {
-        userStopped.set(true)
-        pending.clear()
-        stopWatchKeepalive()
-        endHydrate()
-        val client = clientRef.getAndSet(null)
-        if (client != null) {
-            if (sendWatchOff && client.state.isConnected) {
-                runCatching {
-                    client.publishWith()
-                        .topic(topic("cmd/watch"))
-                        .payload("OFF".toByteArray(StandardCharsets.UTF_8))
-                        .qos(MqttQos.AT_MOST_ONCE)
-                        .send()
-                }
-            }
-            runCatching { client.disconnect() }
-        }
+        killClient(sendWatchOff = sendWatchOff)
         if (notifyIdle) {
             emit(MqttEvent.Status(MqttLinkStatus.Idle))
             emit(MqttEvent.Connection(connected = false, reconnecting = false))
         }
     }
+
+    private fun killClient(sendWatchOff: Boolean) {
+        userStopped.set(true)
+        sessionGen.incrementAndGet() // invaliduje listenery starého klienta
+        pending.clear()
+        stopWatchKeepalive()
+        endHydrate()
+        val client = clientRef.getAndSet(null) ?: return
+        if (sendWatchOff && client.state.isConnected) {
+            runCatching {
+                client.publishWith()
+                    .topic(topic("cmd/watch"))
+                    .payload("OFF".toByteArray(StandardCharsets.UTF_8))
+                    .qos(MqttQos.AT_MOST_ONCE)
+                    .send()
+            }
+        }
+        // USER disconnect vypne automaticReconnect u tohoto klienta.
+        runCatching { client.disconnect() }
+    }
+
+    private fun isCurrent(gen: Int): Boolean = sessionGen.get() == gen
 
     fun publishWatch(on: Boolean) {
         val client = clientRef.get() ?: return
@@ -157,7 +176,7 @@ class MqttRepository {
         client.publishWith()
             .topic(topic("cmd/watch"))
             .payload((if (on) "ON" else "OFF").toByteArray(StandardCharsets.UTF_8))
-            .qos(MqttQos.AT_MOST_ONCE)
+            .qos(MqttQos.AT_LEAST_ONCE)
             .send()
     }
 
@@ -183,7 +202,7 @@ class MqttRepository {
         client.publishWith()
             .topic(topic("cmd/$suffix"))
             .payload(payload.toByteArray(StandardCharsets.UTF_8))
-            .qos(MqttQos.AT_MOST_ONCE)
+            .qos(MqttQos.AT_LEAST_ONCE)
             .send()
             .whenComplete { _, err ->
                 if (err != null) {
@@ -208,14 +227,20 @@ class MqttRepository {
         }
     }
 
-    private fun subscribeAll() {
+    private fun subscribeAll(gen: Int, onReady: () -> Unit) {
         val client = clientRef.get() ?: return
+        val left = AtomicInteger(SUBSCRIBE_FILTERS.size)
         for (suffix in SUBSCRIBE_FILTERS) {
             client.subscribeWith()
                 .topicFilter(topic(suffix))
-                .qos(MqttQos.AT_MOST_ONCE)
+                .qos(MqttQos.AT_LEAST_ONCE)
                 .callback(::onPublish)
                 .send()
+                .whenComplete { _, _ ->
+                    if (left.decrementAndGet() == 0 && isCurrent(gen)) {
+                        onReady()
+                    }
+                }
         }
     }
 
@@ -286,7 +311,7 @@ class MqttRepository {
         stopWatchKeepalive()
         watchFuture = scheduler.scheduleAtFixedRate({
             if (isConnected()) publishWatch(true)
-        }, 60, 60, TimeUnit.SECONDS)
+        }, 45, 45, TimeUnit.SECONDS)
     }
 
     private fun stopWatchKeepalive() {
@@ -325,7 +350,6 @@ class MqttRepository {
                 else -> 1883
             }
             val port = if (uri.port > 0) uri.port else defaultPort
-            // HiveMQ skládá URI jako "/" + serverPath — bez leading slash (jinak //mqtt).
             val path = (uri.rawPath ?: "mqtt")
                 .trim()
                 .trimStart('/')
@@ -344,7 +368,7 @@ class MqttRepository {
         val msg = (cur?.message ?: err.message).orEmpty()
         return when {
             msg.contains("WebSocket", ignoreCase = true) ->
-                "WebSocket selhal — zkontroluj WSS URL (…:8084/mqtt)"
+                "WebSocket selhal — použij mqtts://…:8883"
             msg.contains("SSL", ignoreCase = true) ||
                 msg.contains("TLS", ignoreCase = true) ||
                 msg.contains("certificate", ignoreCase = true) ->

@@ -1,5 +1,8 @@
 package cz.windmi.control.screen
 
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cz.windmi.control.data.MqttSettings
@@ -28,7 +31,19 @@ class WindmiViewModel(
     private var flashJob: Job? = null
     private var autoStarted = false
 
+    private val appLifecycle = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            // Celá appka do popředí — ne Activity onResume (ten maže watch při běžném UI).
+            if (mqtt.isConnected()) mqtt.publishWatch(true)
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+            if (mqtt.isConnected()) mqtt.publishWatch(false)
+        }
+    }
+
     init {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycle)
         mqtt.setListener { event ->
             viewModelScope.launch { onMqttEvent(event) }
         }
@@ -102,11 +117,6 @@ class WindmiViewModel(
             mqtt.disconnect(sendWatchOff = true)
             refreshSession()
         }
-    }
-
-    fun onForeground(visible: Boolean) {
-        if (!mqtt.isConnected()) return
-        mqtt.publishWatch(visible)
     }
 
     fun adjustSetpoint(delta: Int) {
@@ -183,6 +193,8 @@ class WindmiViewModel(
     private fun onMqttEvent(event: MqttEvent) {
         when (event) {
             is MqttEvent.Status -> {
+                val reconnecting = event.status == MqttLinkStatus.Connecting &&
+                    event.error.contains("Obnovuji", ignoreCase = true)
                 _ui.update {
                     it.copy(
                         mqttStatus = event.status,
@@ -191,23 +203,29 @@ class WindmiViewModel(
                         sessionActive = mqtt.sessionActive(),
                     )
                 }
-                if (event.status == MqttLinkStatus.Connecting ||
-                    event.status == MqttLinkStatus.Idle ||
-                    event.status == MqttLinkStatus.Error
-                ) {
-                    clearLiveSignals(resetTab = true)
+                when (event.status) {
+                    MqttLinkStatus.Idle, MqttLinkStatus.Error -> clearLiveSignals(resetTab = true)
+                    MqttLinkStatus.Connecting -> {
+                        // Při reconnectu neshazuj Tab5 online — retained availability nemusí hned přijít.
+                        if (reconnecting) {
+                            clearLiveSignals(resetTab = false)
+                        } else {
+                            clearLiveSignals(resetTab = true)
+                        }
+                    }
+                    MqttLinkStatus.Connected -> Unit
                 }
             }
             is MqttEvent.Connection -> {
                 _ui.update {
                     it.copy(
-                        mqttConnected = event.connected,
+                        mqttConnected = event.connected || it.mqttStatus == MqttLinkStatus.Connected,
                         sessionActive = mqtt.sessionActive(),
                     )
                 }
                 if (!event.connected) {
                     if (event.reconnecting) {
-                        clearLiveSignals(resetTab = true)
+                        clearLiveSignals(resetTab = false)
                     } else {
                         resetTelemetry()
                     }
@@ -222,6 +240,10 @@ class WindmiViewModel(
         lastTeleAt = System.currentTimeMillis()
         _ui.update { state ->
             var next = state.copy(teleFresh = true)
+            // Jakákoli telemetrie = Tab5 žije (i když retained availability ještě nedorazila).
+            if (p.tab5Online == null && impliesTab5Online(p)) {
+                next = next.copy(tab5Online = true)
+            }
             if (p.room != null || p.outdoor != null || p.inlet != null || p.outlet != null) {
                 next = next.copy(
                     temps = next.temps.copy(
@@ -254,6 +276,13 @@ class WindmiViewModel(
             next
         }
         scheduleFaultBanner()
+    }
+
+    private fun impliesTab5Online(p: TelePatch): Boolean {
+        return p.room != null || p.outdoor != null || p.inlet != null || p.outlet != null ||
+            p.setpoint != null || p.clearSetpoint || p.regMode != null || p.eqOffset != null ||
+            p.power != null || p.pump != null || p.compressor != null || p.lin != null ||
+            p.defrost != null || p.elec != null || p.watchActive != null
     }
 
     private fun scheduleFaultBanner() {
@@ -367,6 +396,7 @@ class WindmiViewModel(
     }
 
     override fun onCleared() {
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycle)
         mqtt.setListener(null)
         mqtt.disconnect(sendWatchOff = true)
         super.onCleared()

@@ -170,6 +170,17 @@ PWA nejdřív pošle `watch`, pak příkaz. Tab frontuje RX mimo MQTT callback (
 
 Po změně JS: bump SW + query string, hard refresh / `reset.html`.
 
+### Android APK (Capacitor)
+
+| Položka | Hodnota |
+|---------|---------|
+| Wrapper | `android-app/` |
+| App ID | `cz.windmi.control` |
+| Načítá | GitHub Pages PWA URL (`capacitor.config.json` → `server.url`) |
+| CI | `.github/workflows/build-apk.yml` → artifact `WindmiCtrl-apk` |
+
+Debug APK (sideload). Změna PWA na Pages se projeví bez nového APK; nový build jen při změně wrapperu / ikon / appId.
+
 ---
 
 ## 8. Build a upload

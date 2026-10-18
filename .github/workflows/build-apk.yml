@@ -1,0 +1,86 @@
+# Sestaví sideload APK (Capacitor WebView → GitHub Pages PWA).
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android-app/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: android-app/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Capacitor deps
+        working-directory: android-app
+        run: npm ci
+
+      - name: Generate Android project
+        working-directory: android-app
+        run: |
+          set -euo pipefail
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android-app/android
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          set -euo pipefail
+          SRC="android-app/android/app/build/outputs/apk/debug/app-debug.apk"
+          mkdir -p dist
+          cp "$SRC" "dist/WindmiCtrl-${{ github.sha }}.apk"
+          cp "$SRC" "dist/WindmiCtrl-latest.apk"
+          ls -lh dist/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindmiCtrl-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/WindmiCtrl-latest.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,14 @@
+{
+  "appId": "cz.windmi.control",
+  "appName": "WindmiCtrl",
+  "webDir": "www",
+  "server": {
+    "url": "https://milnek5792.github.io/Rotenso_Windmi/",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#121214"
+  }
+}

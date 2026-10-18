@@ -18,6 +18,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
@@ -43,6 +44,7 @@ class MqttRepository {
     private var watchFuture: ScheduledFuture<*>? = null
     private var hydrateFuture: ScheduledFuture<*>? = null
     private val lastStatus = AtomicReference(MqttLinkStatus.Idle)
+    private val connectingSinceMs = AtomicLong(0)
 
     fun setListener(listener: ((MqttEvent) -> Unit)?) {
         listeners.set(listener)
@@ -56,11 +58,20 @@ class MqttRepository {
         return status == MqttLinkStatus.Connected || status == MqttLinkStatus.Connecting
     }
 
+    /** HiveMQ auto-reconnect umí zůstat ve Connecting po doze — pak je potřeba hard reset. */
+    fun isStuckConnecting(maxMs: Long): Boolean {
+        if (userStopped.get()) return false
+        if (lastStatus.get() != MqttLinkStatus.Connecting) return false
+        val since = connectingSinceMs.get()
+        return since > 0L && System.currentTimeMillis() - since >= maxMs
+    }
+
     fun connect(settings: MqttSettings) {
         // Zruš předchozí klienta (vč. auto-reconnect), ať nekazí novou session.
         killClient(sendWatchOff = false)
         val gen = sessionGen.incrementAndGet()
         userStopped.set(false)
+        connectingSinceMs.set(0L)
 
         val prefix = SettingsStore.normalizePrefix(settings.prefix)
         prefixRef.set(prefix)
@@ -323,7 +334,17 @@ class MqttRepository {
 
     private fun emit(event: MqttEvent) {
         if (event is MqttEvent.Status) {
-            lastStatus.set(event.status)
+            val prev = lastStatus.getAndSet(event.status)
+            when (event.status) {
+                MqttLinkStatus.Connecting ->
+                    if (prev != MqttLinkStatus.Connecting || connectingSinceMs.get() == 0L) {
+                        connectingSinceMs.set(System.currentTimeMillis())
+                    }
+                MqttLinkStatus.Connected,
+                MqttLinkStatus.Idle,
+                MqttLinkStatus.Error,
+                -> connectingSinceMs.set(0L)
+            }
         }
         listeners.get()?.invoke(event)
     }

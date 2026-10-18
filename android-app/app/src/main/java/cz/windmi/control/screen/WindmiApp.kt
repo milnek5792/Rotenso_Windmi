@@ -305,7 +305,7 @@ private fun TempGrid(state: AppUiState) {
 private fun TempCard(
     label: String,
     value: String,
-    mod: Modifier = androidx.compose.ui.Modifier.Modifier,
+    mod: Modifier = Modifier,
     valueColor: Color = TextPrimary,
 ) {
     Column(
@@ -325,7 +325,7 @@ private fun PowerBtn(
     label: String,
     active: Boolean,
     color: Color,
-    mod: Modifier = androidx.compose.ui.Modifier.Modifier,
+    mod: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Button(

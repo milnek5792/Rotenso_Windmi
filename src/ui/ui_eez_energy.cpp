@@ -431,13 +431,66 @@ int32_t niceMaxTenthKw(uint32_t maxW) {
   return maxTenth;
 }
 
-void refreshPowerChart() {
+/**
+ * Spotřeba dne, který je právě na grafu (dayOffset).
+ * Stejné číslo musí jít do horního řádku i do oranžového popisku — ne Today vs Den.
+ */
+float selectedDayKwh(int* outYmd) {
   const uint16_t* samples = nullptr;
   float dayKwh = 0.0f;
   int ymd = 0;
-  if (!climateEnergyDayPowerGet(s_dayOffset, &samples, &dayKwh, &ymd) ||
-      !samples || !energyObj.ser_power) {
+  (void)climateEnergyDayPowerGet(s_dayOffset, &samples, &dayKwh, &ymd);
+  if (s_dayOffset == 0) {
+    // day_kwh[0] — totéž co climateEnergyTodayKwh(), jeden kanál.
+    dayKwh = climateEnergyTodayKwh();
+  }
+  if (outYmd) {
+    *outYmd = ymd;
+  }
+  return dayKwh;
+}
+
+void formatDayDate(char* buf, size_t bufLen, int ymd) {
+  if (!buf || bufLen == 0) {
     return;
+  }
+  if (ymd > 0) {
+    snprintf(buf, bufLen, "%02d.%02d.%04d", ymd % 100, (ymd / 100) % 100,
+             ymd / 10000);
+  } else if (s_dayOffset == 0) {
+    snprintf(buf, bufLen, "Dnes");
+  } else {
+    snprintf(buf, bufLen, "-%d d", s_dayOffset);
+  }
+}
+
+/** Oranžový kWh u grafu = stejné dayKwh jako v souhrnu (vybraný den). */
+void refreshDayKwhLabels(float dayKwh, int ymd) {
+  char dayBuf[48];
+  formatDayDate(dayBuf, sizeof(dayBuf), ymd);
+  setLabelIfChanged(energyObj.lbl_day, dayBuf);
+
+  char kwhBuf[48];
+  // Bez prefixu „Den:“ — datum je vedle; ať se nesplete s měsícem ani s „Dnes“ nahoře.
+  snprintf(kwhBuf, sizeof(kwhBuf), "%.2f kWh", (double)dayKwh);
+  setLabelIfChanged(energyObj.lbl_day_kwh, kwhBuf);
+}
+
+void refreshPowerChart() {
+  int ymd = 0;
+  const float dayKwh = selectedDayKwh(&ymd);
+
+  const uint16_t* samples = nullptr;
+  float ignoredKwh = 0.0f;
+  int ymdSamples = 0;
+  if (!climateEnergyDayPowerGet(s_dayOffset, &samples, &ignoredKwh, &ymdSamples) ||
+      !samples || !energyObj.ser_power) {
+    // I bez křivky drž kWh v souladu se souhrnem (ne starý Den z jiného dne).
+    refreshDayKwhLabels(dayKwh, ymd);
+    return;
+  }
+  if (ymdSamples > 0) {
+    ymd = ymdSamples;
   }
 
   const int step = kMinPerPoint;
@@ -487,20 +540,7 @@ void refreshPowerChart() {
   }
   lv_chart_refresh(energyObj.chart_power);
 
-  char dayBuf[48];
-  if (ymd > 0) {
-    snprintf(dayBuf, sizeof(dayBuf), "%02d.%02d.%04d", ymd % 100,
-             (ymd / 100) % 100, ymd / 10000);
-  } else if (s_dayOffset == 0) {
-    snprintf(dayBuf, sizeof(dayBuf), "Dnes");
-  } else {
-    snprintf(dayBuf, sizeof(dayBuf), "-%d d", s_dayOffset);
-  }
-  setLabelIfChanged(energyObj.lbl_day, dayBuf);
-
-  char kwhBuf[48];
-  snprintf(kwhBuf, sizeof(kwhBuf), "Den: %.2f kWh", (double)dayKwh);
-  setLabelIfChanged(energyObj.lbl_day_kwh, kwhBuf);
+  refreshDayKwhLabels(dayKwh, ymd);
 
   const int wd = weekdayFromYmd(ymd);
   refreshBands(wd);
@@ -649,20 +689,28 @@ void refreshSummaryAndYears() {
     snprintf(seasonSpan, sizeof(seasonSpan), "-");
   }
   const float seasonKwh = climateEnergySeasonTotalKwh();
-  // Součty z NVS; měsíc = slot v topné sezóně (ne kalendářní rok)
+
+  // Denní kWh = den na grafu (ne vždy „dnes“). Oranžový popisek bere totéž.
+  int dayYmd = 0;
+  const float dayKwh = selectedDayKwh(&dayYmd);
+  char dayDate[32];
+  formatDayDate(dayDate, sizeof(dayDate), dayYmd);
+
   if (climateEnergyIsOk() || climateEnergyAuxHeatOn()) {
     snprintf(buf, sizeof(buf),
-             "Příkon %u W   Dnes %.2f kWh   %s %.1f kWh   Sezóna %s %.1f kWh",
-             (unsigned)climateEnergyPowerW(),
-             (double)climateEnergyTodayKwh(), monLbl, (double)monKwh,
-             seasonSpan, (double)seasonKwh);
+             "Příkon %u W   %s: %.2f kWh   Měsíc %s: %.1f kWh   Sezóna %s: "
+             "%.1f kWh",
+             (unsigned)climateEnergyPowerW(), dayDate, (double)dayKwh, monLbl,
+             (double)monKwh, seasonSpan, (double)seasonKwh);
   } else {
     snprintf(buf, sizeof(buf),
-             "Příkon - W   Dnes %.2f kWh   %s %.1f kWh   Sezóna %s %.1f kWh",
-             (double)climateEnergyTodayKwh(), monLbl, (double)monKwh,
-             seasonSpan, (double)seasonKwh);
+             "Příkon - W   %s: %.2f kWh   Měsíc %s: %.1f kWh   Sezóna %s: "
+             "%.1f kWh",
+             dayDate, (double)dayKwh, monLbl, (double)monKwh, seasonSpan,
+             (double)seasonKwh);
   }
   setLabelIfChanged(energyObj.lbl_summary, buf);
+  refreshDayKwhLabels(dayKwh, dayYmd);
 
   char ybuf[220];
   size_t n = 0;
@@ -732,7 +780,7 @@ void uiEnergyCreate(void) {
   energyObj.lbl_day =
       makeLabel(s_powerPanel, kPad + 140, kPad + 6, 220, "Dnes", kColText);
   energyObj.lbl_day_kwh =
-      makeLabel(s_powerPanel, fullW - 280, kPad + 6, 260, "Den: —", kColOrange);
+      makeLabel(s_powerPanel, fullW - 280, kPad + 6, 260, "— kWh", kColOrange);
 
   // kW nad osou Y — nesmí překrývat popisky stupnice
   const int chartY = kPad + 56;
@@ -896,6 +944,7 @@ void uiEnergyTick(void) {
   }
   const uint32_t gen = climateEnergyHistoryGen();
   if (gen == s_lastGen) {
+    // I bez nové historie srovnej kWh nahoře i u grafu (stejný den).
     refreshSummaryAndYears();
     layoutMonthLabels(-1);
     return;

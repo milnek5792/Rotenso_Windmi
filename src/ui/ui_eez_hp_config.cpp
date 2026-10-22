@@ -671,14 +671,12 @@ void uiHpConfigTick(void) {
   lgModelReadLiveSnap(&live);
 
   char liveBuf[420];
+  // 0017H / 100FH: vždy °×10 (manuál Data=Freq*10). Heuristika >200
+  // dělala z 20.0 Hz (raw 200) skok na „200 Hz“.
   const float compHz =
-      live.valid ? ((float)live.comp_freq_x10 *
-                    (live.comp_freq_x10 > 200 ? 0.1f : 1.0f))
-                 : 0.f;
+      live.valid ? ((float)live.comp_freq_x10 * 0.1f) : 0.f;
   const float reqHz =
-      live.req_comp_ok ? ((float)live.req_comp_freq_x10 *
-                          (live.req_comp_freq_x10 > 200 ? 0.1f : 1.0f))
-                       : 0.f;
+      live.req_comp_ok ? ((float)live.req_comp_freq_x10 * 0.1f) : 0.f;
   const float flow =
       live.valid ? ((float)live.water_flow_x100 * 0.01f) : 0.f;
   const bool ibh =

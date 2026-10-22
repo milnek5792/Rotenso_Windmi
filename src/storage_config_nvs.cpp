@@ -34,6 +34,7 @@ constexpr const char* kKeyPlan = "plan_cfg";
 constexpr const char* kKeyReg = "reg_cfg";
 constexpr const char* kKeyRegHist = "reg_hist";
 constexpr const char* kKeyRoomSpX10 = "room_sp_x10";
+constexpr const char* kKeyQuietOatX10 = "q_oat_x10";
 constexpr uint32_t kRegHistMagic = 0x52484731u;  // RHG1
 constexpr uint16_t kRegHistVersion = 1;
 constexpr const char* kKeyUiRezim = "ui_rezim";
@@ -600,6 +601,39 @@ void storageSaveRoomSpTenths(int16_t tenths) {
   if (!n) {
     Serial.printf("[NVS] room_sp_x10=%d → FAIL\n", (int)tenths);
   }
+}
+
+bool storageLoadQuietOatOffTenths(int16_t* outTenths) {
+  if (!outTenths) {
+    return false;
+  }
+  NvsLock lock;
+  ensureOpen();
+  if (!s_open || !s_prefs.isKey(kKeyQuietOatX10)) {
+    return false;
+  }
+  const int v = s_prefs.getInt(kKeyQuietOatX10, -1000);
+  // −25.0 … +10.0 °C
+  if (v < -250 || v > 100) {
+    return false;
+  }
+  *outTenths = static_cast<int16_t>(v);
+  return true;
+}
+
+void storageSaveQuietOatOffTenths(int16_t tenths) {
+  if (tenths < -250) {
+    tenths = -250;
+  }
+  if (tenths > 100) {
+    tenths = 100;
+  }
+  NvsLock lock;
+  ensureOpen();
+  if (!s_open) {
+    return;
+  }
+  (void)s_prefs.putInt(kKeyQuietOatX10, static_cast<int32_t>(tenths));
 }
 
 bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {

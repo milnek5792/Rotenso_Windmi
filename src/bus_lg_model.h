@@ -96,6 +96,8 @@ typedef struct {
 
 void lgModelSetMbLiveExtras(int16_t reqCompFreqX10, bool reqCompOk);
 void lgModelSetMbHpConfig(const WindmiHpConfigSnap* cfg);
+/** Optimistic / write-ack: tichý režim (0044H, 0/1) → LED + live snap. */
+void lgModelSetQuietNight(uint16_t quietNight);
 void lgModelReadLiveSnap(WindmiLiveSnap* out);
 void lgModelReadHpConfigSnap(WindmiHpConfigSnap* out);
 

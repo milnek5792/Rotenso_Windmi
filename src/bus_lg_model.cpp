@@ -251,6 +251,22 @@ void lgModelSetMbLiveExtras(int16_t reqCompFreqX10, bool reqCompOk) {
   lgModelUnlock();
 }
 
+void lgModelSetQuietNight(uint16_t quietNight) {
+  const uint16_t q = (quietNight != 0u) ? 1u : 0u;
+  lgModelLock();
+  s_live.quiet_night = q;
+  s_live.valid = true;
+  if (a0SnapLen < 2u) {
+    for (uint8_t i = a0SnapLen; i < 2u; ++i) {
+      a0Snap[i] = 0;
+    }
+    a0SnapLen = 2;
+  }
+  a0Snap[1] = (q == 1u) ? 0x31u : 0x32u;
+  origTichyRezimLin = (q == 1u);
+  lgModelUnlock();
+}
+
 void lgModelSetMbHpConfig(const WindmiHpConfigSnap* cfg) {
   if (!cfg) {
     return;

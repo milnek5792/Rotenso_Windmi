@@ -43,6 +43,13 @@ typedef struct {
   lv_obj_t* lbl_pump_dt;
   lv_obj_t* btn_pump_dt_m;
   lv_obj_t* btn_pump_dt_p;
+
+  lv_obj_t* lbl_quiet;
+  lv_obj_t* btn_quiet;
+
+  lv_obj_t* lbl_quiet_oat;
+  lv_obj_t* btn_quiet_oat_m;
+  lv_obj_t* btn_quiet_oat_p;
 } hp_config_objects_t;
 
 extern hp_config_objects_t hpConfigObj;

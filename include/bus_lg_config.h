@@ -89,4 +89,17 @@
 #define LG_TICHY_LIN_COLD_OUT_C 7.0f
 #endif
 
+/** Auto-vypnutí tichého režimu: OAT pod prahem (výchozí −5 °C). */
+#ifndef CLIMATE_QUIET_OAT_OFF_C
+#define CLIMATE_QUIET_OAT_OFF_C (-5.0f)
+#endif
+/** Hystereze pro opětovné povolení ZAP (°C nad prahem). */
+#ifndef CLIMATE_QUIET_OAT_HYST_C
+#define CLIMATE_QUIET_OAT_HYST_C 2.0f
+#endif
+/** Prodleva před vypnutím při nízké OAT (ms). */
+#ifndef CLIMATE_QUIET_OAT_OFF_DELAY_MS
+#define CLIMATE_QUIET_OAT_OFF_DELAY_MS (10u * 60u * 1000u)
+#endif
+
 #endif

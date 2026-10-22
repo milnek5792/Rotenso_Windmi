@@ -45,6 +45,10 @@ void storageSaveRegulatorHistory(const RegulatorHistoryPoint* pts, int cap,
 bool storageLoadRoomSpTenths(int16_t* outTenths);
 void storageSaveRoomSpTenths(int16_t tenths);
 
+/** Práh OAT pro auto-vypnutí tichého režimu (desetiny °C, −50 = −5.0). */
+bool storageLoadQuietOatOffTenths(int16_t* outTenths);
+void storageSaveQuietOatOffTenths(int16_t tenths);
+
 /** uiEez.rezim: 0 = auto, 1 = vystupni teplota (UiRezimRegulace). */
 bool storageLoadUiRezim(uint8_t* out);
 void storageSaveUiRezim(uint8_t rezim);

@@ -5,6 +5,7 @@
 #include "ui_eez_fonts.h"
 #include "ui_eez_status_bar.h"
 #include "climate_regulator.h"
+#include "climate_scheduler.h"
 #include "lg_lvgl.h"
 
 #include <math.h>
@@ -19,7 +20,10 @@ constexpr uint32_t kOffColor = 0xAEAEB2u;
 constexpr uint32_t kOnOrange = 0xFF9F0Au;
 constexpr uint32_t kOnPurple = 0xBF5AF2u;
 constexpr uint32_t kOnBlue = 0x0A84FFu;
+/** Quiet auto-vypnuto kvůli nízké OAT. */
+constexpr uint32_t kOnQuietCold = 0xFF453Au;
 constexpr uint32_t kMuted = 0x8E8E93u;
+constexpr size_t kTichyLedIdx = 5;
 constexpr uint32_t kBtnBg = 0x1A1A1Fu;
 constexpr uint32_t kBtnBgOn = 0x14301Cu;
 
@@ -231,7 +235,7 @@ static void ensureTichyLabel(void) {
   lv_obj_set_style_text_align(s_lblTichy, LV_TEXT_ALIGN_LEFT,
                               LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_remove_flag(s_lblTichy, LV_OBJ_FLAG_CLICKABLE);
-  lv_label_set_text_static(s_lblTichy, "TICHY REZIM");
+  lv_label_set_text_static(s_lblTichy, "Tichý režim");
   lv_obj_set_style_text_color(s_lblTichy, lv_color_hex(kMuted),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_move_foreground(s_lblTichy);
@@ -245,17 +249,33 @@ static void styleMutedLabel(lv_obj_t* lbl) {
                               LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
-static void applyTichyLabel(bool on) {
+/** 0=off, 1=quiet on (modrá), 2=cold-blocked (červená). */
+int8_t tichyLedState(void) {
+  if (climateQuietIsOn()) {
+    return 1;
+  }
+  if (climateQuietColdBlocked()) {
+    return 2;
+  }
+  return 0;
+}
+
+static void applyTichyLabel(int8_t st) {
   if (!s_lblTichy) {
     return;
   }
   static int8_t s_last = -1;
-  if (s_last == (int8_t)on) {
+  if (s_last == st) {
     return;
   }
-  s_last = (int8_t)on;
-  lv_obj_set_style_text_color(s_lblTichy,
-                              lv_color_hex(on ? kOnBlue : kMuted),
+  s_last = st;
+  uint32_t col = kMuted;
+  if (st == 1) {
+    col = kOnBlue;
+  } else if (st == 2) {
+    col = kOnQuietCold;
+  }
+  lv_obj_set_style_text_color(s_lblTichy, lv_color_hex(col),
                               LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
@@ -318,26 +338,34 @@ void uiEezApplySignalLeds(void) {
   }
   size_t count = 0;
   const SignalLedDef* defs = signalDefs(&count);
-  static bool s_last[8] = {};
+  static int8_t s_last[8] = {};
   static bool s_haveLast = false;
+  const int8_t tichySt = tichyLedState();
   for (size_t i = 0; i < count; ++i) {
     const SignalLedDef& def = defs[i];
     if (!s_dots[i]) {
       continue;
     }
-    const bool on = uiEez.*def.sig;
-    if (s_haveLast && s_last[i] == on) {
+    int8_t st;
+    uint32_t col = def.onColor;
+    if (i == kTichyLedIdx) {
+      st = tichySt;
+      col = (st == 2) ? kOnQuietCold : kOnBlue;
+    } else {
+      st = (uiEez.*def.sig) ? 1 : 0;
+    }
+    if (s_haveLast && s_last[i] == st) {
       continue;
     }
-    s_last[i] = on;
-    styleDot(s_dots[i], on, def.onColor);
+    s_last[i] = st;
+    styleDot(s_dots[i], st != 0, col);
     if (def.getLbl()) {
       styleMutedLabel(def.getLbl());
     }
   }
   s_haveLast = true;
 
-  applyTichyLabel(uiEez.sig_tichy_lin);
+  applyTichyLabel(tichySt);
 
   applyStartButton(uiEez.sig_chod);
   applyEye(uiEez.sig_mqtt && uiEez.sig_remote);

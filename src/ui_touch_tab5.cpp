@@ -192,7 +192,8 @@ lv_obj_t* hitTestHpConfig(int tx, int ty) {
       hpConfigObj.btn_ibh_oat_p,   hpConfigObj.btn_ibh_warm_m,
       hpConfigObj.btn_ibh_warm_p,  hpConfigObj.btn_ibh_dt_m,
       hpConfigObj.btn_ibh_dt_p,    hpConfigObj.btn_pump_dt_m,
-      hpConfigObj.btn_pump_dt_p,
+      hpConfigObj.btn_pump_dt_p,   hpConfigObj.btn_quiet,
+      hpConfigObj.btn_quiet_oat_m, hpConfigObj.btn_quiet_oat_p,
   };
   return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
 }

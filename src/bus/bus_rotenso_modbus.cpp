@@ -33,6 +33,10 @@ uint16_t s_quiet = 0;
 uint16_t s_flow = 0;
 uint16_t s_load = 0;
 bool s_loadOk = false;
+/** Po frontě/zápisu 0044H držet LED, dokud Input nepotvrdí (nebo timeout). */
+bool s_quietHold = false;
+uint16_t s_quietWant = 0;
+uint32_t s_quietHoldUntilMs = 0;
 /** Stejná rychlost: teploty + kontrolky + průtok. SP občas. */
 enum Step : uint8_t {
   STEP_TEMPS = 0,
@@ -314,12 +318,24 @@ void publishStatus() {
                      s_loadOk, s_flow);
 }
 
+void noteQuietWant(uint16_t value) {
+  s_quietWant = (value != 0u) ? 1u : 0u;
+  s_quietHold = true;
+  s_quietHoldUntilMs = millis() + 10000u;
+  s_quiet = s_quietWant;
+  publishStatus();
+}
+
 bool cfgQPush(uint16_t addr, uint16_t value) {
   // Stejná adresa → přepsat (neplnit frontu opakovanými +/- / retry).
   for (uint8_t i = 0; i < s_cfgQCount; ++i) {
     const uint8_t idx = (uint8_t)((s_cfgQHead + i) % kCfgQCap);
     if (s_cfgQ[idx].addr == addr) {
       s_cfgQ[idx].value = value;
+      // 0207H end != 00:00 ⇒ tichý režim zap (okno); 0044H je jen RO stav.
+      if (addr == (uint16_t)WINDMI_REG_NIGHT_END) {
+        noteQuietWant(value != 0u ? 1u : 0u);
+      }
       return true;
     }
   }
@@ -330,6 +346,9 @@ bool cfgQPush(uint16_t addr, uint16_t value) {
   s_cfgQ[s_cfgQTail].value = value;
   s_cfgQTail = (uint8_t)((s_cfgQTail + 1u) % kCfgQCap);
   ++s_cfgQCount;
+  if (addr == (uint16_t)WINDMI_REG_NIGHT_END) {
+    noteQuietWant(value != 0u ? 1u : 0u);
+  }
   return true;
 }
 
@@ -421,6 +440,10 @@ bool processOneWrite() {
         cfgQPush(wr.addr, wr.value);  // coalesce — nepřidá duplicitu
       } else {
         s_writeNextMs = 0;
+        if (wr.addr == (uint16_t)WINDMI_REG_NIGHT_END) {
+          Serial.printf("[WM] WR NIGHT_END %u (quiet=%u)\n", (unsigned)wr.value,
+                        (unsigned)(wr.value != 0u));
+        }
         // Echo OK ≠ holding už má hodnotu — počkej, pak ověř.
         s_cfgPending = true;
         s_cfgPendingAddr = wr.addr;
@@ -540,7 +563,17 @@ void runQuiet() {
   if (!mbReadInput((uint16_t)WINDMI_REG_QUIET_NIGHT, 1, buf)) {
     return;
   }
-  s_quiet = be16(buf);
+  const uint16_t raw = be16(buf);
+  s_quiet = (raw != 0u) ? 1u : 0u;
+  if (s_quietHold) {
+    if (s_quiet == s_quietWant) {
+      s_quietHold = false;
+    } else if ((int32_t)(millis() - s_quietHoldUntilMs) < 0) {
+      s_quiet = s_quietWant;  // ještě nepotvrzeno — drž LED
+    } else {
+      s_quietHold = false;  // timeout — ber Input
+    }
+  }
   publishStatus();
   APP_SLOG("[WM] LED load=0x%04X comp=%d pump=%u flow=%u quiet=%u\n",
            (unsigned)s_load, (int)s_compX10, (unsigned)s_pump,

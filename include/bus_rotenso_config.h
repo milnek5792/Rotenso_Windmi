@@ -83,8 +83,19 @@
 #ifndef WINDMI_REG_PUMP_SPEED
 #define WINDMI_REG_PUMP_SPEED 0x0055
 #endif
+/** 0044H — jen RO: Frequency Reduction / Night mode aktivní (0/1). */
 #ifndef WINDMI_REG_QUIET_NIGHT
 #define WINDMI_REG_QUIET_NIGHT 0x0044
+#endif
+/** 0206H/0207H — RW okna Night mode (hh*256+mm). start==end ⇒ vyp. */
+#ifndef WINDMI_REG_NIGHT_START
+#define WINDMI_REG_NIGHT_START 0x0206
+#endif
+#ifndef WINDMI_REG_NIGHT_END
+#define WINDMI_REG_NIGHT_END 0x0207
+#endif
+#ifndef WINDMI_NIGHT_HHMM
+#define WINDMI_NIGHT_HHMM(h, m) ((uint16_t)(((uint16_t)(h) << 8) | (uint16_t)(m)))
 #endif
 #ifndef WINDMI_REG_WATER_FLOW
 #define WINDMI_REG_WATER_FLOW 0x102A

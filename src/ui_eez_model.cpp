@@ -6,6 +6,7 @@
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
 
+#include "climate_scheduler.h"
 #include "storage_config_nvs.h"
 #include "ui_eez_porucha.h"
 
@@ -38,6 +39,7 @@ unsigned long spPendingWarnMs(void) {
 
 void uiEezInit() {
   memset(&uiEez, 0, sizeof(uiEez));
+  climateSchedulerInit();
   uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_vody_vstup = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_vody_vystup = UI_TEPLOTA_NEPLATNA;
@@ -176,7 +178,8 @@ void uiEezSyncFromBus() {
   uiEez.sig_kompresor = maA0 && lgJeKompresorBezi(b3);
   uiEez.sig_el_topeni = maA0 && lgJeElTopeni(b2);
   uiEez.sig_odmrazovani = maA0 && ((b3 & 0x04) != 0);
-  uiEez.sig_tichy_lin = maA0 && lgJeTichyRezimLinAktivni();
+  // Přepínač Night window (0206/0207); 0044H = jen „právě omezuje frekvenci“.
+  uiEez.sig_tichy_lin = climateQuietIsOn();
 
   if (pendingOff || (!runOn && !pendingOn)) {
     uiEez.stav_tc = UI_STAV_VYP;

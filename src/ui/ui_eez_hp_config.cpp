@@ -3,8 +3,10 @@
 #include "lg_board.h"
 #include "app_cmd.h"
 #include "bus_rotenso_config.h"
+#include "climate_scheduler.h"
 #include "src/bus/bus_rotenso_modbus.h"
 #include "src/bus_lg_model.h"
+#include "src/bus_lg_protocol.h"
 #include "src/ui_eez_fonts.h"
 #include "src/ui_eez_nav.h"
 
@@ -388,6 +390,47 @@ void onPumpDtP(lv_event_t* e) {
   });
 }
 
+void applyQuietButton(bool on) {
+  if (!hpConfigObj.btn_quiet) {
+    return;
+  }
+  lv_obj_set_style_bg_color(hpConfigObj.btn_quiet,
+                            lv_color_hex(on ? kColOrange : 0x48484Fu),
+                            LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_t* lbl = lv_obj_get_child(hpConfigObj.btn_quiet, 0);
+  if (lbl) {
+    lv_label_set_text(lbl, on ? "ZAP" : "VYP");
+  }
+}
+
+void onQuietToggle(lv_event_t* e) {
+  (void)e;
+  if (climateQuietColdBlocked() && !climateQuietIsOn()) {
+    setLabelIfChanged(hpConfigObj.lbl_cfg_status,
+                      "Tichý režim: OAT nízko (hystereze)");
+    return;
+  }
+  const bool cur = climateQuietIsOn();
+  const bool next = !cur;
+  climateQuietSet(next);
+  applyQuietButton(climateQuietIsOn());
+  setLabelIfChanged(hpConfigObj.lbl_quiet, climateQuietIsOn() ? "ano" : "ne");
+  setLabelIfChanged(hpConfigObj.lbl_cfg_status,
+                    next ? "Tichý režim: zapisuji ZAP..."
+                         : "Tichý režim: zapisuji VYP...");
+  s_busyUntilMs = millis() + 4000u;
+}
+
+void onQuietOatM(lv_event_t* e) {
+  (void)e;
+  climateQuietOatOffAdjust(-1);
+}
+
+void onQuietOatP(lv_event_t* e) {
+  (void)e;
+  climateQuietOatOffAdjust(+1);
+}
+
 void makeParamRow(lv_obj_t* panel, int y, int panelW, const char* title,
                   lv_obj_t** lblVal, lv_obj_t** btnM, lv_obj_t** btnP,
                   lv_event_cb_t cbM, lv_event_cb_t cbP) {
@@ -478,6 +521,18 @@ void uiHpConfigCreate(void) {
   makeParamRow(left, y, colW, "Pump dT", &hpConfigObj.lbl_pump_dt,
                &hpConfigObj.btn_pump_dt_m, &hpConfigObj.btn_pump_dt_p, onPumpDtM,
                onPumpDtP);
+
+  y += kRowH + 8;
+  makeLabel(left, kPad, y + 10, 280, "Tichý režim", kColMuted);
+  hpConfigObj.lbl_quiet = makeLabel(left, 280, y + 10, 100, "-", kColText);
+  hpConfigObj.btn_quiet =
+      makeButton(left, colW - kPad - 120, y + 2, 120, kRowH - 4, "VYP",
+                 onQuietToggle, 0x48484Fu);
+
+  y += kRowH + 4;
+  makeParamRow(left, y, colW, "Quiet vyp OAT", &hpConfigObj.lbl_quiet_oat,
+               &hpConfigObj.btn_quiet_oat_m, &hpConfigObj.btn_quiet_oat_p,
+               onQuietOatM, onQuietOatP);
 
   hpConfigObj.lbl_cfg_status =
       makeLabel(left, kPad, bodyH - 36, colW - 2 * kPad, "Čekám na Modbus...",
@@ -580,6 +635,20 @@ void uiHpConfigTick(void) {
   setLabelIfChanged(hpConfigObj.lbl_ibh_dt, line);
   fmtX10(line, sizeof(line), cfg.pump_delta_t_x10, (cfg.mask & 0x80) != 0, "°C");
   setLabelIfChanged(hpConfigObj.lbl_pump_dt, line);
+
+  {
+    const bool quietOn = climateQuietIsOn();
+    const bool cold = climateQuietColdBlocked();
+    if (cold && !quietOn) {
+      setLabelIfChanged(hpConfigObj.lbl_quiet, "OAT");
+    } else {
+      setLabelIfChanged(hpConfigObj.lbl_quiet, quietOn ? "ano" : "ne");
+    }
+    applyQuietButton(quietOn);
+    char oatBuf[24];
+    snprintf(oatBuf, sizeof(oatBuf), "%.0f °C", (double)climateQuietOatOffC());
+    setLabelIfChanged(hpConfigObj.lbl_quiet_oat, oatBuf);
+  }
 
   {
     const bool busy = (int32_t)(millis() - s_busyUntilMs) < 0;

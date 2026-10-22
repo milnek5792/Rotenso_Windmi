@@ -967,11 +967,7 @@ void handleIncoming(const char* topic, int topicLen, const char* data, int dataL
   if (topicIs(topic, topicLen, MQTT_TOPIC_CMD_QUIET)) {
     bool on = false;
     if (parseOnOffMsg(msg, &on)) {
-      if (on && !uiEez.sig_utlum) {
-        climateTichyManualToggle();
-      } else if (!on && uiEez.sig_utlum) {
-        climateTichyManualToggle();
-      }
+      climateQuietSet(on);
     }
   }
 }

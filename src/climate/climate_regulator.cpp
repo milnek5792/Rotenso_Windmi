@@ -697,10 +697,19 @@ void climateRegulatorTick(void) {
              rawOk ? (double)rawC : -999.0, (int)tcBezi);
   } else if (roomOk && !isnan(roomC)) {
     err = roomSp - roomC;
-    s_lastError = err;
 
-    // Standardní PI: e = SP − T, I += Ki·e, corr = Kp·e + I (+ Kd),
-    // SP_vody = base + corr (clamp −5…+3, anti-windup na I).
+    // Po dosažení SP (změna znaménka e): I=0, corr=P — stejná logika jako
+    // retarget při skoku SP. Jinak I drží steady-state offset.
+    constexpr float kEps = 0.05f;
+    const bool crossSp =
+        s_havePrev && ((s_lastError < -kEps && err > kEps) ||
+                       (s_lastError > kEps && err < -kEps));
+    if (crossSp) {
+      s_iTerm = 0.0f;
+      ESP_LOGI(TAG, "I=0 po prechodu SP e %.2f->%.2f", (double)s_lastError,
+               (double)err);
+    }
+
     float d = 0.0f;
     if (s_havePrev) {
       d = s_cfg.kd * (err - s_prevError);
@@ -708,27 +717,55 @@ void climateRegulatorTick(void) {
     s_prevError = err;
     s_havePrev = true;
 
-    s_iTerm += s_cfg.ki * err;
     const float p = s_cfg.kp * err;
     s_lastP = p;
-    float corr = p + s_iTerm + d;
-    corr = clampf(corr, REG_CORR_MIN_C, REG_CORR_MAX_C);
-    s_iTerm = corr - p - d;
-    s_iTerm = clampf(s_iTerm, REG_CORR_MIN_C, REG_CORR_MAX_C);
-    s_pidCorr = corr;
 
-    const float tRaw = base + corr;
-    const float t = clampf(tRaw, kOutMin, kOutMax);
+    // Integrace: freeze v pásmu deadband; jinak conditional anti-windup.
+    // Dřívější I := corr−P při limitu korekce „přelévalo“ P do I (špatně).
+    const float db = (s_cfg.deadband_c > 0.05f) ? s_cfg.deadband_c : 0.15f;
+    const bool inBand = fabsf(err) < db;
+    float iCand = s_iTerm;
+    if (!inBand) {
+      iCand = s_iTerm + s_cfg.ki * err;
+      iCand = clampf(iCand, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    }
+
+    float corrUnsat = p + iCand + d;
+    float corr = clampf(corrUnsat, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    float tRaw = base + corr;
+    float t = clampf(tRaw, kOutMin, kOutMax);
+    const bool satCorr = (corr != corrUnsat);
+    const bool satWater = (t != tRaw);
+
+    // Povolit integraci jen když není saturace, nebo chyba směřuje ze saturace.
+    if (!inBand) {
+      const bool allowI =
+          (!satCorr && !satWater) ||
+          ((corrUnsat > corr || tRaw > t) && err < 0.0f) ||
+          ((corrUnsat < corr || tRaw < t) && err > 0.0f);
+      if (allowI) {
+        s_iTerm = iCand;
+      }
+      // jinak I drží — anti-windup
+    }
+
+    corr = clampf(p + s_iTerm + d, REG_CORR_MIN_C, REG_CORR_MAX_C);
+    s_pidCorr = corr;
+    s_lastError = err;
+    tRaw = base + corr;
+    t = clampf(tRaw, kOutMin, kOutMax);
     s_tWaterRaw = tRaw;
     s_tWater = t;
 
     ESP_LOGI(TAG,
              "Bezna regulace — zaklad=%.1f korekce=%.2f (P=%.1f I=%.1f) "
-             "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f tc=%d",
+             "req=%.1f e=%.2f room=%.1f/%.1f outF=%.1f raw=%.1f tc=%d%s%s%s",
              (double)base, (double)corr, (double)p, (double)s_iTerm,
              (double)t, (double)err, (double)roomC, (double)roomSp,
              outOk ? (double)outC : -999.0,
-             rawOk ? (double)rawC : -999.0, (int)tcBezi);
+             rawOk ? (double)rawC : -999.0, (int)tcBezi,
+             inBand ? " db" : "", satCorr ? " satC" : "",
+             satWater ? " satW" : "");
   } else {
     s_lastError = 0.0f;
     s_lastP = 0.0f;

@@ -103,6 +103,14 @@ void obnovZakladniStav() {
 
 void aplikujAkci(PlanAkce akce, uint8_t utlumStupne) {
   const bool maBezdet = s_zakladniZapnuto || uiBusSessionIsOn();
+  // Norm/Vyp nikdy nesmí nést „zapomenuté“ stupně z buňky.
+  if (akce != PLAN_AKCE_UTLUM) {
+    utlumStupne = 0;
+  } else if (utlumStupne < 1) {
+    utlumStupne = 1;
+  } else if (utlumStupne > 5) {
+    utlumStupne = 5;
+  }
 
   if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
     switch (akce) {
@@ -221,8 +229,8 @@ void climatePlanSetDefaults(void) {
   nastavObdobi(&g_planConfig.obdobi[PLAN_OBDOBI_VT2], 8, 0, 14, 0, PLAN_CAS_OD_DELKA);
   nastavObdobi(&g_planConfig.obdobi[PLAN_OBDOBI_VT3], 14, 0, 17, 0, PLAN_CAS_OD_DELKA);
   nastavObdobi(&g_planConfig.obdobi[PLAN_OBDOBI_VT4], 17, 0, 21, 0, PLAN_CAS_OD_DELKA);
-  // Noc: 8 hodin (22:00 -> 06:00)
-  nastavObdobi(&g_planConfig.obdobi[PLAN_OBDOBI_NOC], 22, 0, 6, 0, PLAN_CAS_OD_DELKA);
+  // Noc do začátku VT1 (ne 06:00) — jinak 05–06 překryv VT1 vs Noc.
+  nastavObdobi(&g_planConfig.obdobi[PLAN_OBDOBI_NOC], 22, 0, 5, 0, PLAN_CAS_OD_DELKA);
 
   for (int d = 0; d < PLAN_POCET_DNU; ++d) {
     for (int o = 0; o < PLAN_POCET_OBDOBI; ++o) {
@@ -317,6 +325,15 @@ void climatePlanInit(void) {
       delka = maxDelka;
     }
     k = (z + delka) % (24 * 60);
+    // Noc nesmí zasahovat do VT1 (najdiAktivniObdobi bere VT1 dřív).
+    if (o == PLAN_OBDOBI_NOC) {
+      const PlanObdobiCas* vt1 = &g_planConfig.obdobi[PLAN_OBDOBI_VT1];
+      const int vt1z =
+          static_cast<int>(vt1->zacatek.hodina) * 60 + vt1->zacatek.minuta;
+      if (z > k && k > vt1z) {
+        k = vt1z;
+      }
+    }
     ob->konec.hodina = static_cast<uint8_t>(k / 60);
     ob->konec.minuta = static_cast<uint8_t>(k % 60);
   }
@@ -333,6 +350,7 @@ void climatePlanInit(void) {
           b->utlum_stupne = 5;
         }
       } else {
+        // Norm / Vyp — stupně nesmí zůstat z dřívějšího Útlumu.
         b->utlum_stupne = 0;
       }
     }
@@ -396,7 +414,9 @@ void climatePlanTick(void) {
     }
     const PlanBunka* bunka = &g_planConfig.tabulka[den][obdobi];
     cilovaAkce = bunka->akce;
-    cilovyUtlum = bunka->utlum_stupne;
+    // Stupně platí jen u Útlumu — jinak by leftover z NVS/UI držel falešný offset.
+    cilovyUtlum =
+        (cilovaAkce == PLAN_AKCE_UTLUM) ? bunka->utlum_stupne : 0;
   }
 
   // Po změně režimu (pokoj/ekviterm/ruční) znovu aplikuj stejnou buňku.
@@ -428,8 +448,25 @@ void climatePlanTick(void) {
 
   if (nowMs - s_lastMonitorMs >= 1000) {
     s_lastMonitorMs = nowMs;
+    // Každou sekundu drž offset v souladu s buňkou (Norm ⇒ 0).
+    if (obdobi >= 0 && s_planOvlada) {
+      if (cilovaAkce == PLAN_AKCE_UTLUM) {
+        uint8_t st = cilovyUtlum;
+        if (st < 1) {
+          st = 1;
+        }
+        if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
+          climateRegulatorSetPlanRoomOffset(-(float)st);
+        }
+      } else if (uiRezimRegulatorWritesWater(uiEez.rezim)) {
+        climateRegulatorSetPlanRoomOffset(0.0f);
+      }
+    } else if (obdobi < 0 && uiRezimRegulatorWritesWater(uiEez.rezim)) {
+      climateRegulatorSetPlanRoomOffset(0.0f);
+    }
     if (obdobi >= 0) {
-      aktualizujMonitoring(obdobi, cilovaAkce, cilovyUtlum);
+      aktualizujMonitoring(obdobi, cilovaAkce,
+                           (cilovaAkce == PLAN_AKCE_UTLUM) ? cilovyUtlum : 0);
     } else {
       aktualizujMonitoring(-1, PLAN_AKCE_NORMAL, 0);
     }

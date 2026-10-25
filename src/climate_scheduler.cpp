@@ -2,6 +2,7 @@
 
 #include "bus_lg_config.h"
 #include "bus_rotenso_config.h"
+#include "climate_plan.h"
 #include "storage_config_nvs.h"
 #include "src/bus/bus_rotenso_modbus.h"
 #include "src/bus_lg_model.h"
@@ -166,6 +167,12 @@ void climateSchedulerInit() {
 
 void climateSchedulerTick() {
   quietOatProtectTick();
+
+  // Týdenní plán vlastní sig_utlum (Norm/Útlum/Vyp). Nesmíme ho každou
+  // noc přepisovat — jinak při Norm vypadá „útlum“ aktivní skoro pořád.
+  if (climatePlanJeAktivni()) {
+    return;
+  }
 
   if (!uiEez.cas_platny) {
     if (!s_manualOverride) {

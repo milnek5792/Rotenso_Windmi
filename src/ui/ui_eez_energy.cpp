@@ -221,7 +221,8 @@ PlanAkce planAkceAt(int weekday, int minuteOfDay) {
   }
   minuteOfDay %= ENERGY_MINUTES_PER_DAY;
 
-  PlanAkce found = PLAN_AKCE_NORMAL;
+  // Stejné pořadí jako climate_plan::najdiAktivniObdobi — první zásah vyhraje
+  // (VT1 před Nocí). Dřív se slučovaly všechny překryvy → falešný útlum.
   for (int ob = 0; ob < PLAN_POCET_OBDOBI; ++ob) {
     const PlanObdobiCas* od = &cfg->obdobi[ob];
     const int a = (int)planMinutes(&od->zacatek);
@@ -242,15 +243,9 @@ PlanAkce planAkceAt(int weekday, int minuteOfDay) {
     if (!inRange) {
       continue;
     }
-    const PlanAkce akce = cfg->tabulka[cellDay][ob].akce;
-    if (akce == PLAN_AKCE_VYP) {
-      return PLAN_AKCE_VYP;
-    }
-    if (akce == PLAN_AKCE_UTLUM) {
-      found = PLAN_AKCE_UTLUM;
-    }
+    return cfg->tabulka[cellDay][ob].akce;
   }
-  return found;
+  return PLAN_AKCE_NORMAL;
 }
 
 void addPlanBand(lv_obj_t* parent, int plotW, int layerH, int fromMin, int toMin,

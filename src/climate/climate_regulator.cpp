@@ -475,7 +475,8 @@ float climateRegulatorRoomSpEffective(void) {
 namespace {
 
 /** Po skoku efektivního SP pokoje (útlum i ruční SP):
- *  změna znaménka e → I=0, corr=P; jinak bumpeless I := corr − Kp·e. */
+ *  vždy I=0, corr=P — bumpeless držel SP vody a nafukoval I proti P
+ *  (typicky při útlumu u e≈0 → falešné +I a pomalé chladnutí). */
 void retargetIntegralForNewRoomSp(const char* why) {
   if (isClassicEquithermMode()) {
     return;
@@ -487,35 +488,15 @@ void retargetIntegralForNewRoomSp(const char* why) {
   if (isnan(roomC) || roomC <= (UI_TEPLOTA_NEPLATNA + 100.0f)) {
     return;
   }
-  constexpr float kEps = 0.05f;
   const float roomSp = climateRegulatorRoomSpEffective();
   const float e = roomSp - roomC;
   const float p = s_cfg.kp * e;
   const float corrOld = s_pidCorr;
   const float ePrev = s_lastError;
-  const bool dirChange =
-      (ePrev < -kEps && e > kEps) || (ePrev > kEps && e < -kEps);
+  const float iOld = s_iTerm;
 
-  if (dirChange) {
-    s_iTerm = 0.0f;
-    s_pidCorr = clampf(p, REG_CORR_MIN_C, REG_CORR_MAX_C);
-    s_lastP = p;
-    s_lastError = e;
-    s_prevError = e;
-    s_havePrev = true;
-    s_tWaterRaw = s_eqBase + s_pidCorr;
-    s_tWater = clampf(s_tWaterRaw, kOutMin, kOutMax);
-    ESP_LOGI(TAG,
-             "I=0 dir flip e %.2f->%.2f P=%.2f corr %.2f->%.2f T=%.1f — %s",
-             (double)ePrev, (double)e, (double)p, (double)corrOld,
-             (double)s_pidCorr, (double)s_tWater, why ? why : "?");
-    return;
-  }
-
-  float iNew = clampf(corrOld - p, REG_CORR_MIN_C, REG_CORR_MAX_C);
-  float corr = clampf(p + iNew, REG_CORR_MIN_C, REG_CORR_MAX_C);
-  s_iTerm = clampf(corr - p, REG_CORR_MIN_C, REG_CORR_MAX_C);
-  s_pidCorr = corr;
+  s_iTerm = 0.0f;
+  s_pidCorr = clampf(p, REG_CORR_MIN_C, REG_CORR_MAX_C);
   s_lastP = p;
   s_lastError = e;
   s_prevError = e;
@@ -523,8 +504,9 @@ void retargetIntegralForNewRoomSp(const char* why) {
   s_tWaterRaw = s_eqBase + s_pidCorr;
   s_tWater = clampf(s_tWaterRaw, kOutMin, kOutMax);
   ESP_LOGI(TAG,
-           "I retarget e=%.2f P=%.2f I=%.2f corr %.2f->%.2f T=%.1f — %s",
-           (double)e, (double)p, (double)s_iTerm, (double)corrOld,
+           "I=0 SP jump e %.2f->%.2f P=%.2f I was %.2f corr %.2f->%.2f "
+           "T=%.1f — %s",
+           (double)ePrev, (double)e, (double)p, (double)iOld, (double)corrOld,
            (double)s_pidCorr, (double)s_tWater, why ? why : "?");
 }
 
@@ -698,8 +680,7 @@ void climateRegulatorTick(void) {
   } else if (roomOk && !isnan(roomC)) {
     err = roomSp - roomC;
 
-    // Po dosažení SP (změna znaménka e): I=0, corr=P — stejná logika jako
-    // retarget při skoku SP. Jinak I drží steady-state offset.
+    // Po dosažení SP (změna znaménka e): I=0 — jinak by staré I táhlo přes SP.
     constexpr float kEps = 0.05f;
     const bool crossSp =
         s_havePrev && ((s_lastError < -kEps && err > kEps) ||
@@ -720,12 +701,19 @@ void climateRegulatorTick(void) {
     const float p = s_cfg.kp * err;
     s_lastP = p;
 
-    // Integrace: freeze v pásmu deadband; jinak conditional anti-windup.
+    // Integrace: v pásmu leak I→0 (ať nevisí bez přeběhu SP);
+    // mimo pásmo conditional anti-windup.
     // Dřívější I := corr−P při limitu korekce „přelévalo“ P do I (špatně).
     const float db = (s_cfg.deadband_c > 0.05f) ? s_cfg.deadband_c : 0.15f;
     const bool inBand = fabsf(err) < db;
     float iCand = s_iTerm;
-    if (!inBand) {
+    if (inBand) {
+      // ~τ 10 period (20 min) — pomalu stáhne zbytek I u SP.
+      iCand = s_iTerm * 0.90f;
+      if (fabsf(iCand) < 0.02f) {
+        iCand = 0.0f;
+      }
+    } else {
       iCand = s_iTerm + s_cfg.ki * err;
       iCand = clampf(iCand, REG_CORR_MIN_C, REG_CORR_MAX_C);
     }
@@ -737,8 +725,10 @@ void climateRegulatorTick(void) {
     const bool satCorr = (corr != corrUnsat);
     const bool satWater = (t != tRaw);
 
-    // Povolit integraci jen když není saturace, nebo chyba směřuje ze saturace.
-    if (!inBand) {
+    if (inBand) {
+      s_iTerm = iCand;
+    } else {
+      // Povolit integraci jen když není saturace, nebo chyba směřuje ze saturace.
       const bool allowI =
           (!satCorr && !satWater) ||
           ((corrUnsat > corr || tRaw > t) && err < 0.0f) ||

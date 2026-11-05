@@ -177,7 +177,7 @@ void uiEezSyncFromBus() {
   uiEez.sig_cerpadlo = maA0 && lgJeCerpadloZap(b2);
   uiEez.sig_kompresor = maA0 && lgJeKompresorBezi(b3);
   uiEez.sig_el_topeni = maA0 && lgJeElTopeni(b2);
-  uiEez.sig_odmrazovani = maA0 && ((b3 & 0x04) != 0);
+  uiEez.sig_odmrazovani = maA0 && lgJeOdmrazovani(b3);
   // Přepínač Night window (0206/0207); 0044H = jen „právě omezuje frekvenci“.
   uiEez.sig_tichy_lin = climateQuietIsOn();
 

@@ -237,7 +237,7 @@ void displejObnovData() {
   bool isKompresor = lgJeStabilniBeh(b3);
   bool isCerpadlo  = lgJeCerpadloZap(b2);
   bool isPatrona   = (lgModelA0Bajt(2) & 0x04);
-  bool isDefrost   = (lgModelA0Bajt(3) & 0x04);
+  bool isDefrost   = lgJeOdmrazovani(lgModelA0Bajt(3));
 
   if (isStart != displejPredStart) {
     displejKontrolku(280, kY, 180, 90, TXT_TC_ZAPNUTO, isStart, GREEN);

@@ -19,6 +19,7 @@ typedef struct {
   lv_obj_t* chart_power;
   lv_chart_series_t* ser_power;
   lv_chart_series_t* ser_aux;
+  lv_chart_series_t* ser_defrost;
   lv_obj_t* band_layer;
   lv_obj_t* chart_month;
   lv_chart_series_t* ser_month;

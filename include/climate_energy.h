@@ -16,7 +16,10 @@ extern "C" {
 
 /** Bit 15 v minutovém vzorku W = přídavné el. topení (integrované). */
 #define ENERGY_PWR_AUX_BIT 0x8000u
-#define ENERGY_PWR_W_MASK 0x7FFFu
+/** Bit 14 = odmrazování (Running mode 7) během minuty. */
+#define ENERGY_PWR_DEFROST_BIT 0x4000u
+/** Příkon W v dolních 14 bitech (≤ 16 kW — stačí pro TČ + el. topení). */
+#define ENERGY_PWR_W_MASK 0x3FFFu
 
 /** Index měsíce v sezóně: 0=Zář … 8=Kvě. -1 = mimo topné období. */
 int climateEnergySeasonMonthIndex(int calendarMonth1to12);
@@ -56,6 +59,9 @@ static inline uint16_t climateEnergySampleWatts(uint16_t sample) {
 }
 static inline bool climateEnergySampleAux(uint16_t sample) {
   return (sample & ENERGY_PWR_AUX_BIT) != 0;
+}
+static inline bool climateEnergySampleDefrost(uint16_t sample) {
+  return (sample & ENERGY_PWR_DEFROST_BIT) != 0;
 }
 
 /** Měsíce aktuální sezóny [0..8] = Zář..Kvě. */

@@ -194,18 +194,25 @@ int xInPlot(int minute, int plotW) {
 }
 
 void layoutHourLabels(int plotX, int plotW, int hourY) {
+  // Popisky 1..24 vystředit pod svislé čáry mřížky (25 čar: 0..24 h).
+  int w = plotW / 24;
+  if (w < 12) {
+    w = 12;
+  }
   for (int h = 0; h < 24; ++h) {
     if (!s_lblHour[h]) {
       continue;
     }
-    // Sloupec hodiny h: [h/24 … (h+1)/24] šířky — stejně jako mřížka
-    const int x0 = plotX + (h * plotW) / 24;
-    const int x1 = plotX + ((h + 1) * plotW) / 24;
-    int w = x1 - x0;
-    if (w < 8) {
-      w = 8;
+    const int lineHour = h + 1;  // text „1“..„24“
+    const int xLine = plotX + (lineHour * plotW) / 24;
+    int x = xLine - w / 2;
+    if (x < plotX - w / 2) {
+      x = plotX - w / 2;
     }
-    lv_obj_set_pos(s_lblHour[h], x0, hourY);
+    if (x + w > plotX + plotW + w / 2) {
+      x = plotX + plotW - w / 2;
+    }
+    lv_obj_set_pos(s_lblHour[h], x, hourY);
     lv_obj_set_width(s_lblHour[h], w);
   }
 }
@@ -491,17 +498,22 @@ void refreshPowerChart() {
   const int step = kMinPerPoint;
   int32_t pointTenth[kChartPoints];
   bool pointAux[kChartPoints];
+  bool pointDefrost[kChartPoints];
   uint32_t maxW = 0;
 
   for (int i = 0; i < kChartPoints; ++i) {
     uint32_t sum = 0;
     uint32_t n = 0;
     bool auxOn = false;
+    bool defrostOn = false;
     for (int j = 0; j < step; ++j) {
       const uint16_t raw = samples[i * step + j];
       const uint16_t w = sampleDisplayWatts(raw);
       if (climateEnergySampleAux(raw)) {
         auxOn = true;
+      }
+      if (climateEnergySampleDefrost(raw)) {
+        defrostOn = true;
       }
       if (w > 0) {
         sum += w;
@@ -509,6 +521,7 @@ void refreshPowerChart() {
       }
     }
     pointAux[i] = auxOn;
+    pointDefrost[i] = defrostOn;
     if (n == 0) {
       pointTenth[i] = LV_CHART_POINT_NONE;
     } else {
@@ -522,7 +535,8 @@ void refreshPowerChart() {
 
   const int32_t maxTenth = niceMaxTenthKw(maxW);
   lv_chart_set_range(energyObj.chart_power, LV_CHART_AXIS_PRIMARY_Y, 0, maxTenth);
-  lv_chart_set_range(energyObj.chart_power, LV_CHART_AXIS_SECONDARY_Y, 0, 1);
+  // Secondary: 0 = off, 1 = odmrazování (střed), 2 = el. topení (nahoře)
+  lv_chart_set_range(energyObj.chart_power, LV_CHART_AXIS_SECONDARY_Y, 0, 2);
   refreshYTicks(maxTenth);
 
   for (int i = 0; i < kChartPoints; ++i) {
@@ -530,7 +544,11 @@ void refreshPowerChart() {
                              pointTenth[i]);
     if (energyObj.ser_aux) {
       lv_chart_set_value_by_id(energyObj.chart_power, energyObj.ser_aux, i,
-                               pointAux[i] ? 1 : 0);
+                               pointAux[i] ? 2 : 0);
+    }
+    if (energyObj.ser_defrost) {
+      lv_chart_set_value_by_id(energyObj.chart_power, energyObj.ser_defrost, i,
+                               pointDefrost[i] ? 1 : 0);
     }
   }
   lv_chart_refresh(energyObj.chart_power);
@@ -827,8 +845,9 @@ void uiEnergyCreate(void) {
   lv_chart_set_type(energyObj.chart_power, LV_CHART_TYPE_LINE);
   lv_chart_set_point_count(energyObj.chart_power, kChartPoints);
   lv_chart_set_range(energyObj.chart_power, LV_CHART_AXIS_PRIMARY_Y, 0, 20);
-  lv_chart_set_range(energyObj.chart_power, LV_CHART_AXIS_SECONDARY_Y, 0, 1);
+  lv_chart_set_range(energyObj.chart_power, LV_CHART_AXIS_SECONDARY_Y, 0, 2);
   // hdiv = počet vodorovných čar (= kYTicks); musí sedět s popisky Y
+  // vdiv = 25 → čáry na 0,1,…,24 h
   lv_chart_set_div_line_count(energyObj.chart_power, kYTicks, 25);
   lv_obj_set_style_line_width(energyObj.chart_power, 3, LV_PART_ITEMS);
   lv_obj_set_style_bg_opa(energyObj.chart_power, LV_OPA_0, LV_PART_ITEMS);
@@ -836,10 +855,13 @@ void uiEnergyCreate(void) {
       energyObj.chart_power, lv_color_hex(kColGreen), LV_CHART_AXIS_PRIMARY_Y);
   energyObj.ser_aux = lv_chart_add_series(
       energyObj.chart_power, lv_color_hex(kColRed), LV_CHART_AXIS_SECONDARY_Y);
+  energyObj.ser_defrost = lv_chart_add_series(
+      energyObj.chart_power, lv_color_hex(0x64D2FFu), LV_CHART_AXIS_SECONDARY_Y);
   for (int i = 0; i < kChartPoints; ++i) {
     lv_chart_set_value_by_id(energyObj.chart_power, energyObj.ser_power, i,
                              LV_CHART_POINT_NONE);
     lv_chart_set_value_by_id(energyObj.chart_power, energyObj.ser_aux, i, 0);
+    lv_chart_set_value_by_id(energyObj.chart_power, energyObj.ser_defrost, i, 0);
   }
 
   const int hourY = chartY + chartInnerH + 2;

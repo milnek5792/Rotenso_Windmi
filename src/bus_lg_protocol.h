@@ -13,6 +13,8 @@ inline bool lgJeStabilniBeh(uint8_t b3) { return lgJeZapnuto(b3) && (b3 & LG_BIT
 inline bool lgJeCerpadloZap(uint8_t b2) { return (b2 & 0x02) != 0; }
 /** Přídavné el. topení (patrona) — A0 B2 bit 0x04. */
 inline bool lgJeElTopeni(uint8_t b2) { return (b2 & 0x04) != 0; }
+/** Syntetický b3 bit z Running mode == 7 (Defrost / 002DH). */
+inline bool lgJeOdmrazovani(uint8_t b3) { return (b3 & 0x04) != 0; }
 
 /**
  * B3==0x08 — LG „pauza / příprava“:

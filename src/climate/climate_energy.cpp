@@ -60,6 +60,8 @@ uint16_t s_powerW = 0;  // poslední PZEM W (bez el. topení)
 bool s_auxOn = false;
 uint32_t s_lastAuxMs = 0;
 int s_auxLatchMinute = -1;
+bool s_defrostOn = false;
+int s_defrostLatchMinute = -1;
 uint32_t s_histGen = 1;
 uint32_t s_lastSaveMs = 0;
 uint32_t s_lastPowerSaveMs = 0;
@@ -406,19 +408,46 @@ void persistIfNeeded(bool force) {
   }
 }
 
-void latchAuxBit(int minuteOfDay) {
+void latchFlagBit(int minuteOfDay, uint16_t flagBit) {
   if (!s_weekPower || minuteOfDay < 0 ||
       minuteOfDay >= ENERGY_MINUTES_PER_DAY) {
     return;
   }
-  if ((s_weekPower[minuteOfDay] & ENERGY_PWR_AUX_BIT) != 0) {
+  if ((s_weekPower[minuteOfDay] & flagBit) != 0) {
     return;
   }
+  const uint16_t keep = (uint16_t)(ENERGY_PWR_W_MASK | ENERGY_PWR_AUX_BIT |
+                                   ENERGY_PWR_DEFROST_BIT);
   s_weekPower[minuteOfDay] =
-      (uint16_t)((s_weekPower[minuteOfDay] & ENERGY_PWR_W_MASK) |
-                 ENERGY_PWR_AUX_BIT);
+      (uint16_t)((s_weekPower[minuteOfDay] & keep) | flagBit);
   s_powerDirty = true;
   s_histGen++;
+}
+
+void latchAuxBit(int minuteOfDay) {
+  latchFlagBit(minuteOfDay, ENERGY_PWR_AUX_BIT);
+}
+
+void latchDefrostBit(int minuteOfDay) {
+  latchFlagBit(minuteOfDay, ENERGY_PWR_DEFROST_BIT);
+}
+
+void tickDefrost(const struct tm* tOpt) {
+  const bool on =
+      lgMaCerstoA0(5000) && lgJeOdmrazovani(lgModelA0Bajt(3, 0));
+  s_defrostOn = on;
+  if (!on) {
+    s_defrostLatchMinute = -1;
+    return;
+  }
+  if (!tOpt) {
+    return;
+  }
+  const int minuteOfDay = tOpt->tm_hour * 60 + tOpt->tm_min;
+  if (minuteOfDay != s_defrostLatchMinute) {
+    s_defrostLatchMinute = minuteOfDay;
+    latchDefrostBit(minuteOfDay);
+  }
 }
 
 void tickAuxHeat(const struct tm* tOpt) {
@@ -501,6 +530,8 @@ void climateEnergyClearHistory(void) {
   s_auxOn = false;
   s_lastAuxMs = 0;
   s_auxLatchMinute = -1;
+  s_defrostOn = false;
+  s_defrostLatchMinute = -1;
   if (s_weekPower) {
     memset(s_weekPower, 0,
            ENERGY_WEEK_DAYS * ENERGY_MINUTES_PER_DAY * sizeof(uint16_t));
@@ -610,6 +641,7 @@ void climateEnergyTick(void) {
     ensureSeason(climateEnergySeasonYear(t.tm_year + 1900, t.tm_mon + 1));
   }
   tickAuxHeat(haveTime ? &t : nullptr);
+  tickDefrost(haveTime ? &t : nullptr);
   persistIfNeeded(false);
 }
 
@@ -635,6 +667,9 @@ void climateEnergyOnSample(uint16_t avgPowerW, float energyKwh, bool energyReset
     uint16_t cell = cellW;
     if (s_auxOn || (prev & ENERGY_PWR_AUX_BIT) != 0) {
       cell = (uint16_t)(cell | ENERGY_PWR_AUX_BIT);
+    }
+    if (s_defrostOn || (prev & ENERGY_PWR_DEFROST_BIT) != 0) {
+      cell = (uint16_t)(cell | ENERGY_PWR_DEFROST_BIT);
     }
     s_weekPower[minuteOfDay] = cell;
     s_powerDirty = true;

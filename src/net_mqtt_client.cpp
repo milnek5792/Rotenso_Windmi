@@ -362,7 +362,7 @@ void snapTeleFromModel(TeleModelSnap* out) {
   }
 
   out->defrost =
-      ((bus.lin_live && ((bus.b3 & 0x04) != 0)) || uiEez.sig_odmrazovani) ? 1
+      ((bus.lin_live && lgJeOdmrazovani(bus.b3)) || uiEez.sig_odmrazovani) ? 1
                                                                           : 0;
   out->elec =
       ((bus.lin_live && lgJeElTopeni(bus.b2)) || uiEez.sig_el_topeni) ? 1 : 0;

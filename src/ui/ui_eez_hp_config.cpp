@@ -3,6 +3,7 @@
 #include "lg_board.h"
 #include "app_cmd.h"
 #include "bus_rotenso_config.h"
+#include "climate_comp_stats.h"
 #include "climate_scheduler.h"
 #include "src/bus/bus_rotenso_modbus.h"
 #include "src/bus_lg_model.h"
@@ -708,6 +709,7 @@ void uiHpConfigTick(void) {
       "Režim: %s (%u)\n"
       "Kompresor: %s%.0f Hz\n"
       "Požadavek: %s%.0f Hz\n"
+      "Starty: %u / h   %u / den\n"
       "Čerpadlo: %s%u\n"
       "Průtok: %s%.2f m³/h\n"
       "IBH1: %s\n"
@@ -723,6 +725,8 @@ void uiHpConfigTick(void) {
       live.valid ? (unsigned)live.running_mode : 0u,
       live.valid ? "" : "- ", live.valid ? (double)compHz : 0.0,
       live.req_comp_ok ? "" : "- ", live.req_comp_ok ? (double)reqHz : 0.0,
+      (unsigned)climateCompStartsLastHour(),
+      (unsigned)climateCompStartsToday(),
       live.valid ? "" : "- ", live.valid ? (unsigned)live.pump_speed : 0u,
       live.valid ? "" : "- ", live.valid ? (double)flow : 0.0,
       live.load_ok ? (ibh ? "ON" : "OFF") : "-",

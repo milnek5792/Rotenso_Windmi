@@ -1,4 +1,4 @@
 #ifndef APP_BUILD_STAMP_H
 #define APP_BUILD_STAMP_H
-#define APP_FW_VERSION "261105-0914"
+#define APP_FW_VERSION "261119-0802"
 #endif

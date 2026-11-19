@@ -10,6 +10,7 @@
 #include "src/climate_scheduler.h"
 #include "climate_regulator.h"
 #include "climate_energy.h"
+#include "climate_comp_stats.h"
 #include "storage_config_nvs.h"
 #include "src/ui_eez_model.h"
 #include "ui_eez_nav.h"
@@ -597,6 +598,7 @@ void uiBusBindingsTick(void) {
   climatePlanTick();
   climateRegulatorTick();
   climateEnergyTick();
+  climateCompStatsTick();
   uiEezSyncFromBus();
 }
 
